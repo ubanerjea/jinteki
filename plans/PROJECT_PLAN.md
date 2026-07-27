@@ -29,7 +29,8 @@ A web app to capture, search, and view Android: Netrunner card data (FFG core se
 
 ## Users & Auth
 
-- **Multi-user** from the start, via **Auth.js (NextAuth)** with OAuth providers and the Prisma adapter — no password flows to build/maintain.
+- **Multi-user** from the start, via **Auth.js (NextAuth)** with the Prisma adapter — no password flows to build/maintain.
+  - OAuth provider: **GitHub only** (single provider, simplest OAuth app setup).
 - Accounts unlock:
   - **Favorites/collections** on cards and decklists.
   - **Roles**: an admin role (you) that can trigger syncs and moderate; regular users can browse and favorite.
