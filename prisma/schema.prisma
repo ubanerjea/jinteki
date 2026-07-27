@@ -1,0 +1,212 @@
+// Prisma schema for jinteki — Phase 1 (foundation).
+//
+// Scope note: this schema covers every entity from PROJECT_PLAN.md /
+// PHASE_1_PLAN.md so later phases (NRDB sync, rules scraper, UI) don't
+// require reshaping migrations. No sync logic, no scraper, and no UI query
+// code exists yet — this is schema-only.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Card catalog (populated by a later-phase NRDB sync script; empty for now)
+// ---------------------------------------------------------------------------
+
+model Faction {
+  code        String @id
+  description String
+
+  cards Card[]
+}
+
+model Pack {
+  code String @id
+  name String
+
+  cards Card[]
+}
+
+model Card {
+  code        String   @id
+  title       String
+  typeCode    String
+  factionCode String
+  sideCode    String
+  text        String?
+  keywords    String[]
+  packCode    String?
+  raw         Json
+
+  faction Faction @relation(fields: [factionCode], references: [code])
+  pack    Pack?   @relation(fields: [packCode], references: [code])
+
+  decklistsAsIdentity Decklist[]
+  decklistCards       DecklistCard[]
+  rulings             Ruling[]
+  favoritedBy         CardFavorite[]
+}
+
+// ---------------------------------------------------------------------------
+// Decklists (populated by a later-phase NRDB sync script; empty for now)
+// ---------------------------------------------------------------------------
+
+model Decklist {
+  id           String   @id
+  name         String
+  identityCode String
+  raw          Json
+
+  identity Card           @relation(fields: [identityCode], references: [code])
+  cards    DecklistCard[]
+
+  favoritedBy DecklistFavorite[]
+}
+
+model DecklistCard {
+  decklistId String
+  cardCode   String
+  quantity   Int
+
+  decklist Decklist @relation(fields: [decklistId], references: [id], onDelete: Cascade)
+  card     Card     @relation(fields: [cardCode], references: [code])
+
+  @@id([decklistId, cardCode])
+}
+
+// ---------------------------------------------------------------------------
+// Official rulings (populated by a later-phase NRDB sync script; empty for now)
+// ---------------------------------------------------------------------------
+
+model Ruling {
+  id                   Int      @id @default(autoincrement())
+  cardCode             String
+  question             String?
+  answer               String?
+  textRuling           String?
+  nsgRulesTeamVerified Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
+
+  card Card @relation(fields: [cardCode], references: [code])
+}
+
+// ---------------------------------------------------------------------------
+// Comprehensive rules glossary
+//
+// RuleSection is populated by a later-phase rules-doc scraper — empty for now.
+// RuleMapping is populated NOW by prisma/seed.ts from prisma/rule-mapping-data.ts.
+//
+// IMPORTANT: RuleMapping.ruleSectionId is deliberately a plain string column
+// with NO db-level foreign key / Prisma relation to RuleSection. RuleSection
+// has zero rows until the scraper (a later phase) runs, so a FK constraint
+// here would make the Phase 1 seed fail. Add the relation once RuleSection is
+// actually populated.
+// ---------------------------------------------------------------------------
+
+model RuleSection {
+  id       String @id
+  title    String
+  anchor   String
+  bodyText String
+}
+
+model RuleMapping {
+  id            String @id @default(cuid())
+  key           String
+  ruleSectionId String
+
+  @@unique([key, ruleSectionId])
+  @@index([key])
+}
+
+// ---------------------------------------------------------------------------
+// Users, roles, and Auth.js (next-auth@beta / v5) required tables
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role      @default(USER)
+
+  accounts Account[]
+  sessions Session[]
+
+  cardFavorites     CardFavorite[]
+  decklistFavorites DecklistFavorite[]
+}
+
+// Standard Auth.js Prisma-adapter shape, unmodified.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Favorites — two plain join tables rather than one polymorphic table
+// ---------------------------------------------------------------------------
+
+model CardFavorite {
+  userId    String
+  cardCode  String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card Card @relation(fields: [cardCode], references: [code], onDelete: Cascade)
+
+  @@id([userId, cardCode])
+}
+
+model DecklistFavorite {
+  userId     String
+  decklistId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decklist Decklist @relation(fields: [decklistId], references: [id], onDelete: Cascade)
+
+  @@id([userId, decklistId])
+}
