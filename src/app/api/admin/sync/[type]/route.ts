@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/require-admin";
 import { runCardsSync } from "@/sync/sync-cards";
 import { runDecklistsSync } from "@/sync/sync-decklists";
 import { runFactionsPacksSync } from "@/sync/sync-factions-packs";
+import { runRulesSync } from "@/sync/sync-rules";
 import { runRulingsSync } from "@/sync/sync-rulings";
 
 // URL-friendly kebab-case keys -> the matching SyncType + run function.
@@ -21,6 +22,7 @@ const SYNC_HANDLERS: Record<
   cards: { type: SyncType.CARDS, run: runCardsSync },
   decklists: { type: SyncType.DECKLISTS, run: runDecklistsSync },
   rulings: { type: SyncType.RULINGS, run: runRulingsSync },
+  rules: { type: SyncType.RULES, run: runRulesSync },
 };
 
 export async function POST(

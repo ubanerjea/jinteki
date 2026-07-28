@@ -104,14 +104,17 @@ model Ruling {
 // ---------------------------------------------------------------------------
 // Comprehensive rules glossary
 //
-// RuleSection is populated by a later-phase rules-doc scraper — empty for now.
-// RuleMapping is populated NOW by prisma/seed.ts from prisma/rule-mapping-data.ts.
+// RuleSection is populated by src/sync/sync-rules.ts (`pnpm sync:rules`,
+// added in Phase 3) - a scraper for rules.nullsignal.games. RuleMapping is
+// populated by prisma/seed.ts from prisma/rule-mapping-data.ts.
 //
-// IMPORTANT: RuleMapping.ruleSectionId is deliberately a plain string column
-// with NO db-level foreign key / Prisma relation to RuleSection. RuleSection
-// has zero rows until the scraper (a later phase) runs, so a FK constraint
-// here would make the Phase 1 seed fail. Add the relation once RuleSection is
-// actually populated.
+// Phase 1 deliberately left RuleMapping.ruleSectionId as a plain string
+// column with NO db-level foreign key / Prisma relation to RuleSection,
+// since RuleSection had zero rows at the time (a FK would have made the
+// Phase 1 seed fail). Phase 3 activates the real FK now that RuleSection is
+// populated for real (119 rows) and every RuleMapping row has been verified
+// to reference a real RuleSection.id (see prisma/migrations and
+// agent-reports/phase-3.md).
 // ---------------------------------------------------------------------------
 
 model RuleSection {
@@ -119,12 +122,16 @@ model RuleSection {
   title    String
   anchor   String
   bodyText String
+
+  mappings RuleMapping[]
 }
 
 model RuleMapping {
   id            String @id @default(cuid())
   key           String
   ruleSectionId String
+
+  ruleSection RuleSection @relation(fields: [ruleSectionId], references: [id])
 
   @@unique([key, ruleSectionId])
   @@index([key])
@@ -227,6 +234,7 @@ enum SyncType {
   CARDS
   DECKLISTS
   RULINGS
+  RULES
 }
 
 enum SyncStatus {

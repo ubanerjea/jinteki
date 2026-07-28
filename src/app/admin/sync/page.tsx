@@ -14,6 +14,7 @@ const SYNC_TYPES: { urlType: string; type: SyncType; label: string }[] = [
   { urlType: "cards", type: SyncType.CARDS, label: "Cards" },
   { urlType: "decklists", type: SyncType.DECKLISTS, label: "Decklists" },
   { urlType: "rulings", type: SyncType.RULINGS, label: "Rulings" },
+  { urlType: "rules", type: SyncType.RULES, label: "Rules (Comprehensive Rules glossary)" },
 ];
 
 export default async function AdminSyncPage() {

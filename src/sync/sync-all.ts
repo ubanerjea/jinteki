@@ -1,10 +1,14 @@
-// Runs all four syncs in dependency order: factions+packs -> cards ->
-// decklists -> rulings. Stops (non-zero exit) on the first failure rather
-// than continuing on to steps whose FK dependencies didn't finish syncing.
+// Runs all five syncs in dependency order: factions+packs -> cards ->
+// decklists -> rulings -> rules. Stops (non-zero exit) on the first failure
+// rather than continuing on to steps whose FK dependencies didn't finish
+// syncing. "rules" has no FK dependency on the other four (RuleSection is
+// scraped from rules.nullsignal.games, not derived from Card data) - it's
+// placed last simply to keep the NRDB-sourced resources grouped together.
 
 import { runCardsSync } from "./sync-cards";
 import { runDecklistsSync } from "./sync-decklists";
 import { runFactionsPacksSync } from "./sync-factions-packs";
+import { runRulesSync } from "./sync-rules";
 import { runRulingsSync } from "./sync-rulings";
 
 const steps: [string, () => Promise<{ status: string; recordCount: number | null }>][] = [
@@ -12,6 +16,7 @@ const steps: [string, () => Promise<{ status: string; recordCount: number | null
   ["cards", runCardsSync],
   ["decklists", runDecklistsSync],
   ["rulings", runRulingsSync],
+  ["rules", runRulesSync],
 ];
 
 async function main() {
