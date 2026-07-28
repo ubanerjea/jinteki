@@ -1,0 +1,18 @@
+{
+  "id": "faerie",
+  "type": "cards",
+  "attributes": {
+    "title": "Faerie",
+    "card_type_id": "program",
+    "side_id": "runner",
+    "faction_id": "anarch",
+    "text": "Faerie has +2 strength while an ICE you are encountering has at least 1 subroutine remaining that hasn't been broken during this run.\n[trash]: Break 1 subroutine.",
+    "card_subtype_ids": ["icebreaker", "killer"],
+    "card_set_ids": ["kala_ghoda"],
+    "num_printings": 1,
+    "printing_ids": ["07023"],
+    "updated_at": "2026-07-17T18:16:00+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/cards/faerie" }
+}

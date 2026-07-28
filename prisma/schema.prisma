@@ -84,7 +84,13 @@ model DecklistCard {
 // ---------------------------------------------------------------------------
 
 model Ruling {
-  id                   Int      @id @default(autoincrement())
+  id       Int @id @default(autoincrement())
+  // NRDB's own numeric ruling id (the "rulings" resource's JSON:API `id`).
+  // Added in Phase 2 so sync-rulings.ts has a natural key to upsert on -
+  // without it there's no way to idempotently re-run the sync (the local
+  // autoincrement `id` can't be known in advance, and no other column
+  // combination is guaranteed unique).
+  nrdbId               Int      @unique
   cardCode             String
   question             String?
   answer               String?
@@ -209,4 +215,34 @@ model DecklistFavorite {
   decklist Decklist @relation(fields: [decklistId], references: [id], onDelete: Cascade)
 
   @@id([userId, decklistId])
+}
+
+// ---------------------------------------------------------------------------
+// Sync run log — Phase 2. Populated by src/sync/*.ts. Gives the admin sync
+// page ("did the last sync work, when, how many records") something to show.
+// ---------------------------------------------------------------------------
+
+enum SyncType {
+  FACTIONS_PACKS
+  CARDS
+  DECKLISTS
+  RULINGS
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model SyncRun {
+  id           String     @id @default(cuid())
+  type         SyncType
+  status       SyncStatus
+  startedAt    DateTime   @default(now())
+  finishedAt   DateTime?
+  recordCount  Int?
+  errorMessage String?
+
+  @@index([type, status, startedAt])
 }

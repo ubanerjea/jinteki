@@ -1,0 +1,13 @@
+{
+  "id": "anarch",
+  "type": "factions",
+  "attributes": {
+    "name": "Anarch",
+    "description": "It doesn't have to be this way.\nAfter centuries of corporate control...",
+    "is_mini": false,
+    "side_id": "runner",
+    "updated_at": "2026-07-17T18:15:59+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/factions/anarch" }
+}

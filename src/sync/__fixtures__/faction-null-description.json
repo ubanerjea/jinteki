@@ -1,0 +1,13 @@
+{
+  "id": "neutral_corp",
+  "type": "factions",
+  "attributes": {
+    "name": "Neutral",
+    "description": null,
+    "is_mini": false,
+    "side_id": "corp",
+    "updated_at": "2026-07-17T18:15:59+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/factions/neutral_corp" }
+}

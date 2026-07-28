@@ -1,0 +1,28 @@
+{
+  "id": "91383315-750e-49e5-91a6-6e280bf02fc0",
+  "type": "decklists",
+  "attributes": {
+    "user_id": "Koschei",
+    "identity_card_id": "hoshiko_shiro_untold_protagonist",
+    "name": "Reduce, Reuse, Recycle",
+    "notes": "<p>District 99 is fun...</p>",
+    "tags": null,
+    "side_id": "runner",
+    "created_at": "2021-05-13T21:24:44+00:00",
+    "updated_at": "2026-06-07T22:31:07+00:00",
+    "faction_id": "anarch",
+    "card_slots": {
+      "archives_interface": 2,
+      "black_orchestra": 1,
+      "boomerang": 3,
+      "hoshiko_shiro_untold_protagonist": 1,
+      "sure_gamble": 3
+    },
+    "num_cards": 45,
+    "influence_spent": 14
+  },
+  "relationships": {},
+  "links": {
+    "self": "https://api.netrunnerdb.com/api/v3/public/decklists/91383315-750e-49e5-91a6-6e280bf02fc0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "sure_gamble",
+  "type": "cards",
+  "attributes": {
+    "title": "Sure Gamble",
+    "card_type_id": "event",
+    "side_id": "runner",
+    "faction_id": "neutral_runner",
+    "text": "Gain 9[credit].",
+    "card_subtype_ids": [],
+    "card_set_ids": ["system_gateway", "system_core_2019", "revised_core_set", "core_set"],
+    "num_printings": 4,
+    "printing_ids": ["30030", "25059", "20056", "01050"],
+    "updated_at": "2026-07-17T18:16:02+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/cards/sure_gamble" }
+}

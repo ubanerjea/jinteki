@@ -1,0 +1,14 @@
+{
+  "id": "70001",
+  "type": "rulings",
+  "attributes": {
+    "card_id": "hoshiko_shiro_untold_protagonist",
+    "nsg_rules_team_verified": true,
+    "question": null,
+    "answer": null,
+    "text_ruling": "Hoshiko's ability triggers once per turn, regardless of how many times you make a successful run.",
+    "updated_at": "2023-11-01T00:00:00+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/rulings/70001" }
+}

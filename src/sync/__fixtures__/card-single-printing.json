@@ -1,0 +1,18 @@
+{
+  "id": "15_minutes",
+  "type": "cards",
+  "attributes": {
+    "title": "15 Minutes",
+    "card_type_id": "agenda",
+    "side_id": "corp",
+    "faction_id": "nbn",
+    "text": "[click]: Shuffle 15 Minutes into R&D. The Corp can trigger this ability while 15 Minutes is in the Runner's score area.\nLimit 1 per deck.",
+    "card_subtype_ids": [],
+    "card_set_ids": ["data_and_destiny"],
+    "num_printings": 1,
+    "printing_ids": ["09004"],
+    "updated_at": "2026-07-17T18:16:00+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/cards/15_minutes" }
+}

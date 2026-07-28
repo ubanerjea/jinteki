@@ -1,0 +1,14 @@
+{
+  "id": "62907",
+  "type": "rulings",
+  "attributes": {
+    "card_id": "419_amoral_scammer",
+    "nsg_rules_team_verified": false,
+    "question": "####[ANCUR](https://twitter.com/anr_ruleswiki) [UFAQ 22]\nAfter the Corp installs a card for the first time in a turn, who decides first?",
+    "answer": "A. The Runner chooses to use the ability, then the Corp chooses whether or not to pay the 1 credit.",
+    "text_ruling": null,
+    "updated_at": "2018-04-06T00:00:00+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/rulings/62907" }
+}
