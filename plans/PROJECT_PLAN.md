@@ -40,6 +40,20 @@ A web app to capture, search, and view Android: Netrunner card data (FFG core se
 
 - **Local-only** for now (Docker Compose Postgres, localhost Next.js). No hosting, no production OAuth app registration, no hosted Postgres yet. Revisit once the core loop (browse/search cards & decklists, rulings, rules glossary, favorites) is solid.
 
+## Phase verification standards
+
+Every phase plan (`plans/PHASE_N_PLAN.md`) should include, at minimum, the following checks in its own "Verification" section — run for real with captured output, not asserted from code inspection alone. These were distilled from real gaps caught (and in one case, missed and later caught) during Phase 1 and Phase 2:
+
+- **Static correctness**: typecheck (`tsc --noEmit`) and lint clean.
+- **Dev-mode boot**: `pnpm dev` actually starts, and a real HTTP request (e.g. `curl`) against at least the homepage returns the expected response — confirms the app serves requests, not just that it compiles.
+- **Production artifact actually works**: `next build` followed by `next start`, with a real HTTP request against the running production server. `next build` succeeding only proves the code compiles — it does **not** prove the built artifact correctly serves requests at runtime, since `next dev` and `next start` are different code paths (dev-mode bundling and error handling vs. the real production build). Both must be checked; neither substitutes for the other. (This was originally missed in Phase 2's verification and had to be added in a follow-up pass — don't repeat that gap.)
+- **Schema changes verified by direct introspection**: if a phase adds/changes the Prisma schema, confirm the actual resulting database state directly (`psql \dt`/`\d`/`\di`, etc.) rather than trusting Prisma's own migration-success message — schema-diffing tools can silently propose dropping things they don't understand (e.g. raw-SQL indexes not expressed in `schema.prisma`, like the `pg_trgm` GIN indexes).
+- **Data-writing logic verified by actual row counts, not self-reported counts**: if a phase syncs or otherwise writes data, check real row counts/spot-check real rows via the database directly. Do not trust a script's own "N records synced" log line as proof the data actually landed correctly — Phase 2's decklist sync reported a correct-looking count while silently only persisting ~64% of the rows, due to unstable pagination order; only a direct `psql` count caught it.
+- **Auth-gated routes actually reject unauthorized access**: for any new protected route, confirm with a real unauthenticated/unauthorized HTTP request that it's actually rejected, not just that the gating code exists.
+- **Tests pass**: `pnpm test` for whatever the phase added.
+
+Every phase also produces a task report per `AGENTS.md`'s convention — these verification results are what that report's "Verification" section should be built from.
+
 ## UI behavior (rules support)
 
 Right-clicking a card surfaces:
