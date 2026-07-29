@@ -31,7 +31,23 @@ async function main() {
     });
   }
 
-  console.log(`Seeded ${ruleMappingData.length} RuleMapping row(s).`);
+  // Reconcile: delete any RuleMapping row whose (key, ruleSectionId) pair is
+  // no longer present in ruleMappingData - otherwise a removed entry leaves
+  // a silent orphan row behind (upsert alone never deletes).
+  const { count: deletedCount } = await prisma.ruleMapping.deleteMany({
+    where: {
+      NOT: {
+        OR: ruleMappingData.map((entry) => ({
+          key: entry.key,
+          ruleSectionId: entry.ruleSectionId,
+        })),
+      },
+    },
+  });
+
+  console.log(
+    `Seeded ${ruleMappingData.length} RuleMapping row(s), deleted ${deletedCount} orphaned row(s).`,
+  );
 }
 
 main()
