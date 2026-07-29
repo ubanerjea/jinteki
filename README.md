@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# jinteki
 
-## Getting Started
+Android: Netrunner card database, decklists, rulings, and comprehensive-rules glossary. See [`plans/PROJECT_PLAN.md`](plans/PROJECT_PLAN.md) for the full architecture and scope.
 
-First, run the development server:
+## Prerequisites
+
+- Node.js + [pnpm](https://pnpm.io/)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for Postgres)
+
+## Working directory
+
+Unless noted otherwise, every command below must be run from the repo root (`C:\Users\Unz\git\jinteki`) — that's where `package.json`, `docker-compose.yml`, and `.env` live, and what `pnpm`/`docker compose` resolve relative to.
+
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+docker compose up -d
+pnpm prisma migrate deploy
+pnpm prisma db seed
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Copy `.env.example` to `.env` and fill in real values (Postgres credentials, `AUTH_SECRET`, GitHub OAuth app credentials) before running the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Running the app
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Dev mode (normal day-to-day use)
 
-## Learn More
+Hot reload, easier debugging. Use this unless you specifically need to test the production build.
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**To stop:** `Ctrl+C` in the terminal it's running in.
 
-## Deploy on Vercel
+**If you don't have that terminal** (e.g. it was started in another session/window), find and kill whatever is bound to port 3000. These are plain PowerShell/OS commands — they work from *any* directory, not just the repo root:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```powershell
+Get-NetTCPConnection -LocalPort 3000 -State Listen | Select-Object OwningProcess
+Stop-Process -Id <PID from above> -Force
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Production mode (verifying the real build artifact)
+
+No hot reload — rebuild after every code change. Use this to confirm the actual deployable bundle works, not just that it compiles.
+
+```bash
+pnpm build
+pnpm start
+```
+
+Stop the same way as dev mode above.
+
+## Viewing the Postgres database
+
+The Docker container publishes port 5432 to the host, so any Postgres client works, not just tools run inside the container.
+
+| Method | Where to run it | Command / connection |
+|---|---|---|
+| **Prisma Studio** (recommended — no extra install) | Repo root | `pnpm prisma studio` → opens `http://localhost:5555` |
+| **psql inside the container** | Repo root (needs `docker-compose.yml`) | `docker compose exec postgres psql -U jinteki -d jinteki` |
+| **External GUI client** (pgAdmin, TablePlus, DBeaver, etc.) | Anywhere — it's a separate app, not a repo command | Host `localhost`, port `5432`, db `jinteki`, user/password from `.env` |
+
+## Project docs
+
+- [`plans/PROJECT_PLAN.md`](plans/PROJECT_PLAN.md) — architecture and scope decisions
+- [`plans/PHASE_1_PLAN.md`](plans/PHASE_1_PLAN.md), [`plans/PHASE_2_PLAN.md`](plans/PHASE_2_PLAN.md) — phase build plans
+- [`agent-reports/`](agent-reports/) — what was actually built and verified per phase
