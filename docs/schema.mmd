@@ -1,0 +1,117 @@
+erDiagram
+    Faction {
+        string code PK
+        string description
+    }
+    Pack {
+        string code PK
+        string name
+    }
+    Card {
+        string code PK
+        string title
+        string typeCode
+        string factionCode FK
+        string sideCode
+        string text "nullable"
+        string_array keywords
+        string packCode FK "nullable"
+        json raw
+    }
+    Decklist {
+        string id PK
+        string name
+        string identityCode FK
+        json raw
+    }
+    DecklistCard {
+        string decklistId PK,FK
+        string cardCode PK,FK
+        int quantity
+    }
+    Ruling {
+        int id PK
+        int nrdbId UK
+        string cardCode FK
+        string question "nullable"
+        string answer "nullable"
+        string textRuling "nullable"
+        boolean nsgRulesTeamVerified
+        datetime updatedAt
+    }
+    RuleSection {
+        string id PK
+        string title
+        string anchor
+        string bodyText
+    }
+    RuleMapping {
+        string id PK
+        string key
+        string ruleSectionId FK
+    }
+    User {
+        string id PK
+        string name "nullable"
+        string email UK "nullable"
+        datetime emailVerified "nullable"
+        string image "nullable"
+        role role
+    }
+    Account {
+        string id PK
+        string userId FK
+        string type
+        string provider
+        string providerAccountId
+        string refresh_token "nullable"
+        string access_token "nullable"
+        int expires_at "nullable"
+        string token_type "nullable"
+        string scope "nullable"
+        string id_token "nullable"
+        string session_state "nullable"
+    }
+    Session {
+        string id PK
+        string sessionToken UK
+        string userId FK
+        datetime expires
+    }
+    VerificationToken {
+        string identifier
+        string token
+        datetime expires
+    }
+    CardFavorite {
+        string userId PK,FK
+        string cardCode PK,FK
+        datetime createdAt
+    }
+    DecklistFavorite {
+        string userId PK,FK
+        string decklistId PK,FK
+        datetime createdAt
+    }
+    SyncRun {
+        string id PK
+        synctype type
+        syncstatus status
+        datetime startedAt
+        datetime finishedAt "nullable"
+        int recordCount "nullable"
+        string errorMessage "nullable"
+    }
+    Faction ||--o{ Card : "faction"
+    Pack ||--o{ Card : "pack (optional)"
+    Card ||--o{ Decklist : "identity"
+    Decklist ||--o{ DecklistCard : "decklist"
+    Card ||--o{ DecklistCard : "card"
+    Card ||--o{ Ruling : "card"
+    RuleSection ||--o{ RuleMapping : "ruleSection"
+    User ||--o{ Account : "user"
+    User ||--o{ Session : "user"
+    User ||--o{ CardFavorite : "user"
+    Card ||--o{ CardFavorite : "card"
+    User ||--o{ DecklistFavorite : "user"
+    Decklist ||--o{ DecklistFavorite : "decklist"

@@ -13,7 +13,8 @@
     "sync:decklists": "tsx src/sync/sync-decklists.ts",
     "sync:rulings": "tsx src/sync/sync-rulings.ts",
     "sync:rules": "tsx src/sync/sync-rules.ts",
-    "sync:all": "tsx src/sync/sync-all.ts"
+    "sync:all": "tsx src/sync/sync-all.ts",
+    "docs:schema": "tsx scripts/generate-schema-doc.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

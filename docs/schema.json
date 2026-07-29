@@ -1,0 +1,1829 @@
+{
+  "generatedAt": "2026-07-29T05:52:32.663Z",
+  "source": {
+    "commit": "df3d7f720e04e1b25ee295c90e68a70e536e1d72",
+    "dirty": true,
+    "migrations": {
+      "count": 4,
+      "names": [
+        "20260727222007_init",
+        "20260728000126_add_sync_run_and_ruling_nrdb_id",
+        "20260728141013_add_rules_sync_type",
+        "20260728143000_add_rule_mapping_fk"
+      ]
+    }
+  },
+  "enums": [
+    {
+      "name": "Role",
+      "values": [
+        "ADMIN",
+        "USER"
+      ],
+      "description": "Users, roles, and Auth.js (next-auth@beta / v5) required tables"
+    },
+    {
+      "name": "SyncType",
+      "values": [
+        "FACTIONS_PACKS",
+        "CARDS",
+        "DECKLISTS",
+        "RULINGS",
+        "RULES"
+      ],
+      "description": "Sync run log — Phase 2. Populated by src/sync/*.ts. Gives the admin sync page (\"did the last sync work, when, how many records\") something to show."
+    },
+    {
+      "name": "SyncStatus",
+      "values": [
+        "RUNNING",
+        "SUCCESS",
+        "FAILED"
+      ],
+      "description": ""
+    }
+  ],
+  "models": [
+    {
+      "name": "Faction",
+      "description": "Card catalog (populated by a later-phase NRDB sync script; empty for now)",
+      "fields": [
+        {
+          "name": "code",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "description",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "code"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Faction\" (\n    \"code\" TEXT NOT NULL,\n    \"description\" TEXT NOT NULL,\n\n    CONSTRAINT \"Faction_pkey\" PRIMARY KEY (\"code\")\n);"
+      ]
+    },
+    {
+      "name": "Pack",
+      "description": "",
+      "fields": [
+        {
+          "name": "code",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "name",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "code"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Pack\" (\n    \"code\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n\n    CONSTRAINT \"Pack_pkey\" PRIMARY KEY (\"code\")\n);"
+      ]
+    },
+    {
+      "name": "Card",
+      "description": "",
+      "fields": [
+        {
+          "name": "code",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "title",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "typeCode",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "factionCode",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Card",
+            "fromField": "faction",
+            "toModel": "Faction",
+            "fkColumns": [
+              "factionCode"
+            ],
+            "refColumns": [
+              "code"
+            ],
+            "optional": false
+          }
+        },
+        {
+          "name": "sideCode",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "text",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "keywords",
+          "rawType": "String[]",
+          "baseType": "String",
+          "isList": true,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string_array",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "packCode",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Card",
+            "fromField": "pack",
+            "toModel": "Pack",
+            "fkColumns": [
+              "packCode"
+            ],
+            "refColumns": [
+              "code"
+            ],
+            "optional": true
+          }
+        },
+        {
+          "name": "raw",
+          "rawType": "Json",
+          "baseType": "Json",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "json",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "code"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Card\" (\n    \"code\" TEXT NOT NULL,\n    \"title\" TEXT NOT NULL,\n    \"typeCode\" TEXT NOT NULL,\n    \"factionCode\" TEXT NOT NULL,\n    \"sideCode\" TEXT NOT NULL,\n    \"text\" TEXT,\n    \"keywords\" TEXT[],\n    \"packCode\" TEXT,\n    \"raw\" JSONB NOT NULL,\n\n    CONSTRAINT \"Card_pkey\" PRIMARY KEY (\"code\")\n);",
+        "-- AddForeignKey\nALTER TABLE \"Card\" ADD CONSTRAINT \"Card_factionCode_fkey\" FOREIGN KEY (\"factionCode\") REFERENCES \"Faction\"(\"code\") ON DELETE RESTRICT ON UPDATE CASCADE;",
+        "-- AddForeignKey\nALTER TABLE \"Card\" ADD CONSTRAINT \"Card_packCode_fkey\" FOREIGN KEY (\"packCode\") REFERENCES \"Pack\"(\"code\") ON DELETE SET NULL ON UPDATE CASCADE;",
+        "CREATE INDEX \"Card_title_trgm_idx\" ON \"Card\" USING GIN (\"title\" gin_trgm_ops);",
+        "CREATE INDEX \"Card_text_trgm_idx\" ON \"Card\" USING GIN (\"text\" gin_trgm_ops);"
+      ]
+    },
+    {
+      "name": "Decklist",
+      "description": "Decklists (populated by a later-phase NRDB sync script; empty for now)",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "name",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "identityCode",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Decklist",
+            "fromField": "identity",
+            "toModel": "Card",
+            "fkColumns": [
+              "identityCode"
+            ],
+            "refColumns": [
+              "code"
+            ],
+            "optional": false
+          }
+        },
+        {
+          "name": "raw",
+          "rawType": "Json",
+          "baseType": "Json",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "json",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Decklist\" (\n    \"id\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n    \"identityCode\" TEXT NOT NULL,\n    \"raw\" JSONB NOT NULL,\n\n    CONSTRAINT \"Decklist_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- AddForeignKey\nALTER TABLE \"Decklist\" ADD CONSTRAINT \"Decklist_identityCode_fkey\" FOREIGN KEY (\"identityCode\") REFERENCES \"Card\"(\"code\") ON DELETE RESTRICT ON UPDATE CASCADE;",
+        "CREATE INDEX \"Decklist_name_trgm_idx\" ON \"Decklist\" USING GIN (\"name\" gin_trgm_ops);"
+      ]
+    },
+    {
+      "name": "DecklistCard",
+      "description": "",
+      "fields": [
+        {
+          "name": "decklistId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "DecklistCard",
+            "fromField": "decklist",
+            "toModel": "Decklist",
+            "fkColumns": [
+              "decklistId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "onDelete": "Cascade",
+            "optional": false
+          }
+        },
+        {
+          "name": "cardCode",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "DecklistCard",
+            "fromField": "card",
+            "toModel": "Card",
+            "fkColumns": [
+              "cardCode"
+            ],
+            "refColumns": [
+              "code"
+            ],
+            "optional": false
+          }
+        },
+        {
+          "name": "quantity",
+          "rawType": "Int",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [
+        "@@id([decklistId, cardCode])"
+      ],
+      "pkFields": [
+        "decklistId",
+        "cardCode"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"DecklistCard\" (\n    \"decklistId\" TEXT NOT NULL,\n    \"cardCode\" TEXT NOT NULL,\n    \"quantity\" INTEGER NOT NULL,\n\n    CONSTRAINT \"DecklistCard_pkey\" PRIMARY KEY (\"decklistId\",\"cardCode\")\n);",
+        "-- AddForeignKey\nALTER TABLE \"DecklistCard\" ADD CONSTRAINT \"DecklistCard_decklistId_fkey\" FOREIGN KEY (\"decklistId\") REFERENCES \"Decklist\"(\"id\") ON DELETE CASCADE ON UPDATE CASCADE;",
+        "-- AddForeignKey\nALTER TABLE \"DecklistCard\" ADD CONSTRAINT \"DecklistCard_cardCode_fkey\" FOREIGN KEY (\"cardCode\") REFERENCES \"Card\"(\"code\") ON DELETE RESTRICT ON UPDATE CASCADE;"
+      ]
+    },
+    {
+      "name": "Ruling",
+      "description": "Official rulings (populated by a later-phase NRDB sync script; empty for now)",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "Int",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            },
+            {
+              "name": "default",
+              "args": "autoincrement()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "nrdbId",
+          "rawType": "Int",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "unique",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": true,
+          "fk": null
+        },
+        {
+          "name": "cardCode",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Ruling",
+            "fromField": "card",
+            "toModel": "Card",
+            "fkColumns": [
+              "cardCode"
+            ],
+            "refColumns": [
+              "code"
+            ],
+            "optional": false
+          }
+        },
+        {
+          "name": "question",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "answer",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "textRuling",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "nsgRulesTeamVerified",
+          "rawType": "Boolean",
+          "baseType": "Boolean",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "false"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "boolean",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "updatedAt",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "updatedAt",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [
+        [
+          "nrdbId"
+        ]
+      ],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Ruling\" (\n    \"id\" SERIAL NOT NULL,\n    \"cardCode\" TEXT NOT NULL,\n    \"question\" TEXT,\n    \"answer\" TEXT,\n    \"textRuling\" TEXT,\n    \"nsgRulesTeamVerified\" BOOLEAN NOT NULL DEFAULT false,\n    \"updatedAt\" TIMESTAMP(3) NOT NULL,\n\n    CONSTRAINT \"Ruling_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- AddForeignKey\nALTER TABLE \"Ruling\" ADD CONSTRAINT \"Ruling_cardCode_fkey\" FOREIGN KEY (\"cardCode\") REFERENCES \"Card\"(\"code\") ON DELETE RESTRICT ON UPDATE CASCADE;",
+        "-- AlterTable\nALTER TABLE \"Ruling\" ADD COLUMN     \"nrdbId\" INTEGER NOT NULL;",
+        "-- CreateIndex\nCREATE UNIQUE INDEX \"Ruling_nrdbId_key\" ON \"Ruling\"(\"nrdbId\");"
+      ]
+    },
+    {
+      "name": "RuleSection",
+      "description": "Comprehensive rules glossary RuleSection is populated by src/sync/sync-rules.ts (`pnpm sync:rules`, added in Phase 3) - a scraper for rules.nullsignal.games. RuleMapping is populated by prisma/seed.ts from prisma/rule-mapping-data.ts. Phase 1 deliberately left RuleMapping.ruleSectionId as a plain string column with NO db-level foreign key / Prisma relation to RuleSection, since RuleSection had zero rows at the time (a FK would have made the Phase 1 seed fail). Phase 3 activates the real FK now that RuleSection is populated for real (119 rows) and every RuleMapping row has been verified to reference a real RuleSection.id (see prisma/migrations and agent-reports/phase-3.md).",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "title",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "anchor",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "bodyText",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"RuleSection\" (\n    \"id\" TEXT NOT NULL,\n    \"title\" TEXT NOT NULL,\n    \"anchor\" TEXT NOT NULL,\n    \"bodyText\" TEXT NOT NULL,\n\n    CONSTRAINT \"RuleSection_pkey\" PRIMARY KEY (\"id\")\n);",
+        "CREATE INDEX \"RuleSection_title_trgm_idx\" ON \"RuleSection\" USING GIN (\"title\" gin_trgm_ops);",
+        "CREATE INDEX \"RuleSection_bodyText_trgm_idx\" ON \"RuleSection\" USING GIN (\"bodyText\" gin_trgm_ops);"
+      ]
+    },
+    {
+      "name": "RuleMapping",
+      "description": "",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            },
+            {
+              "name": "default",
+              "args": "cuid()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "key",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "ruleSectionId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "RuleMapping",
+            "fromField": "ruleSection",
+            "toModel": "RuleSection",
+            "fkColumns": [
+              "ruleSectionId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "optional": false
+          }
+        }
+      ],
+      "blockAttrs": [
+        "@@unique([key, ruleSectionId])",
+        "@@index([key])"
+      ],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [
+        [
+          "key",
+          "ruleSectionId"
+        ]
+      ],
+      "indexGroups": [
+        [
+          "key"
+        ]
+      ],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"RuleMapping\" (\n    \"id\" TEXT NOT NULL,\n    \"key\" TEXT NOT NULL,\n    \"ruleSectionId\" TEXT NOT NULL,\n\n    CONSTRAINT \"RuleMapping_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- CreateIndex\nCREATE INDEX \"RuleMapping_key_idx\" ON \"RuleMapping\"(\"key\");",
+        "-- CreateIndex\nCREATE UNIQUE INDEX \"RuleMapping_key_ruleSectionId_key\" ON \"RuleMapping\"(\"key\", \"ruleSectionId\");",
+        "-- Activates the RuleMapping.ruleSectionId -> RuleSection.id foreign key,\n-- deliberately deferred since Phase 1 (see schema.prisma's comment on\n-- RuleSection/RuleMapping) until RuleSection actually had real rows.\n--\n-- Sequenced per PHASE_3_PLAN.md: `pnpm sync:rules` was run for real first\n-- (119 RuleSection rows, confirmed via psql), then prisma/rule-mapping-data.ts\n-- was replaced with the real curated mapping and reseeded (28 RuleMapping\n-- rows, confirmed via psql that every ruleSectionId referenced resolves to a\n-- real RuleSection.id - see verify-mapping.mjs's output in\n-- agent-reports/phase-3.md), and only then is this FK added.\n--\n-- Hand-written from `prisma migrate diff`'s output with the AddForeignKey\n-- line kept and the DropIndex statements deliberately excluded -\n-- `migrate diff` doesn't understand the hand-written pg_trgm GIN indexes\n-- (not expressed via Prisma's schema syntax) and proposes dropping all five\n-- of them every time it's run - same issue hit in Phase 2's and this\n-- phase's earlier RULES-enum migration. Those indexes must survive.\n\nALTER TABLE \"RuleMapping\" ADD CONSTRAINT \"RuleMapping_ruleSectionId_fkey\" FOREIGN KEY (\"ruleSectionId\") REFERENCES \"RuleSection\"(\"id\") ON DELETE RESTRICT ON UPDATE CASCADE;"
+      ]
+    },
+    {
+      "name": "User",
+      "description": "",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            },
+            {
+              "name": "default",
+              "args": "cuid()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "name",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "email",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [
+            {
+              "name": "unique",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": true,
+          "fk": null
+        },
+        {
+          "name": "emailVerified",
+          "rawType": "DateTime?",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "image",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "role",
+          "rawType": "Role",
+          "baseType": "Role",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "USER"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "role",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [
+        [
+          "email"
+        ]
+      ],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"User\" (\n    \"id\" TEXT NOT NULL,\n    \"name\" TEXT,\n    \"email\" TEXT,\n    \"emailVerified\" TIMESTAMP(3),\n    \"image\" TEXT,\n    \"role\" \"Role\" NOT NULL DEFAULT 'USER',\n\n    CONSTRAINT \"User_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- CreateIndex\nCREATE UNIQUE INDEX \"User_email_key\" ON \"User\"(\"email\");"
+      ]
+    },
+    {
+      "name": "Account",
+      "description": "Standard Auth.js Prisma-adapter shape, unmodified.",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            },
+            {
+              "name": "default",
+              "args": "cuid()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "userId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Account",
+            "fromField": "user",
+            "toModel": "User",
+            "fkColumns": [
+              "userId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "onDelete": "Cascade",
+            "optional": false
+          }
+        },
+        {
+          "name": "type",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "provider",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "providerAccountId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "refresh_token",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [
+            {
+              "name": "db.Text",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "access_token",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [
+            {
+              "name": "db.Text",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "expires_at",
+          "rawType": "Int?",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "token_type",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "scope",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "id_token",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [
+            {
+              "name": "db.Text",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "session_state",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [
+        "@@unique([provider, providerAccountId])"
+      ],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [
+        [
+          "provider",
+          "providerAccountId"
+        ]
+      ],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Account\" (\n    \"id\" TEXT NOT NULL,\n    \"userId\" TEXT NOT NULL,\n    \"type\" TEXT NOT NULL,\n    \"provider\" TEXT NOT NULL,\n    \"providerAccountId\" TEXT NOT NULL,\n    \"refresh_token\" TEXT,\n    \"access_token\" TEXT,\n    \"expires_at\" INTEGER,\n    \"token_type\" TEXT,\n    \"scope\" TEXT,\n    \"id_token\" TEXT,\n    \"session_state\" TEXT,\n\n    CONSTRAINT \"Account_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- CreateIndex\nCREATE UNIQUE INDEX \"Account_provider_providerAccountId_key\" ON \"Account\"(\"provider\", \"providerAccountId\");",
+        "-- AddForeignKey\nALTER TABLE \"Account\" ADD CONSTRAINT \"Account_userId_fkey\" FOREIGN KEY (\"userId\") REFERENCES \"User\"(\"id\") ON DELETE CASCADE ON UPDATE CASCADE;"
+      ]
+    },
+    {
+      "name": "Session",
+      "description": "",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            },
+            {
+              "name": "default",
+              "args": "cuid()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "sessionToken",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "unique",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": true,
+          "fk": null
+        },
+        {
+          "name": "userId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Session",
+            "fromField": "user",
+            "toModel": "User",
+            "fkColumns": [
+              "userId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "onDelete": "Cascade",
+            "optional": false
+          }
+        },
+        {
+          "name": "expires",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [
+        [
+          "sessionToken"
+        ]
+      ],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Session\" (\n    \"id\" TEXT NOT NULL,\n    \"sessionToken\" TEXT NOT NULL,\n    \"userId\" TEXT NOT NULL,\n    \"expires\" TIMESTAMP(3) NOT NULL,\n\n    CONSTRAINT \"Session_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- CreateIndex\nCREATE UNIQUE INDEX \"Session_sessionToken_key\" ON \"Session\"(\"sessionToken\");",
+        "-- AddForeignKey\nALTER TABLE \"Session\" ADD CONSTRAINT \"Session_userId_fkey\" FOREIGN KEY (\"userId\") REFERENCES \"User\"(\"id\") ON DELETE CASCADE ON UPDATE CASCADE;"
+      ]
+    },
+    {
+      "name": "VerificationToken",
+      "description": "",
+      "fields": [
+        {
+          "name": "identifier",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "token",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "expires",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [
+        "@@unique([identifier, token])"
+      ],
+      "pkFields": [],
+      "uniqueGroups": [
+        [
+          "identifier",
+          "token"
+        ]
+      ],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"VerificationToken\" (\n    \"identifier\" TEXT NOT NULL,\n    \"token\" TEXT NOT NULL,\n    \"expires\" TIMESTAMP(3) NOT NULL\n);",
+        "-- CreateIndex\nCREATE UNIQUE INDEX \"VerificationToken_identifier_token_key\" ON \"VerificationToken\"(\"identifier\", \"token\");"
+      ]
+    },
+    {
+      "name": "CardFavorite",
+      "description": "Favorites — two plain join tables rather than one polymorphic table",
+      "fields": [
+        {
+          "name": "userId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "CardFavorite",
+            "fromField": "user",
+            "toModel": "User",
+            "fkColumns": [
+              "userId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "onDelete": "Cascade",
+            "optional": false
+          }
+        },
+        {
+          "name": "cardCode",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "CardFavorite",
+            "fromField": "card",
+            "toModel": "Card",
+            "fkColumns": [
+              "cardCode"
+            ],
+            "refColumns": [
+              "code"
+            ],
+            "onDelete": "Cascade",
+            "optional": false
+          }
+        },
+        {
+          "name": "createdAt",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "now()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [
+        "@@id([userId, cardCode])"
+      ],
+      "pkFields": [
+        "userId",
+        "cardCode"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"CardFavorite\" (\n    \"userId\" TEXT NOT NULL,\n    \"cardCode\" TEXT NOT NULL,\n    \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,\n\n    CONSTRAINT \"CardFavorite_pkey\" PRIMARY KEY (\"userId\",\"cardCode\")\n);",
+        "-- AddForeignKey\nALTER TABLE \"CardFavorite\" ADD CONSTRAINT \"CardFavorite_userId_fkey\" FOREIGN KEY (\"userId\") REFERENCES \"User\"(\"id\") ON DELETE CASCADE ON UPDATE CASCADE;",
+        "-- AddForeignKey\nALTER TABLE \"CardFavorite\" ADD CONSTRAINT \"CardFavorite_cardCode_fkey\" FOREIGN KEY (\"cardCode\") REFERENCES \"Card\"(\"code\") ON DELETE CASCADE ON UPDATE CASCADE;"
+      ]
+    },
+    {
+      "name": "DecklistFavorite",
+      "description": "",
+      "fields": [
+        {
+          "name": "userId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "DecklistFavorite",
+            "fromField": "user",
+            "toModel": "User",
+            "fkColumns": [
+              "userId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "onDelete": "Cascade",
+            "optional": false
+          }
+        },
+        {
+          "name": "decklistId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "DecklistFavorite",
+            "fromField": "decklist",
+            "toModel": "Decklist",
+            "fkColumns": [
+              "decklistId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "onDelete": "Cascade",
+            "optional": false
+          }
+        },
+        {
+          "name": "createdAt",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "now()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [
+        "@@id([userId, decklistId])"
+      ],
+      "pkFields": [
+        "userId",
+        "decklistId"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"DecklistFavorite\" (\n    \"userId\" TEXT NOT NULL,\n    \"decklistId\" TEXT NOT NULL,\n    \"createdAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,\n\n    CONSTRAINT \"DecklistFavorite_pkey\" PRIMARY KEY (\"userId\",\"decklistId\")\n);",
+        "-- AddForeignKey\nALTER TABLE \"DecklistFavorite\" ADD CONSTRAINT \"DecklistFavorite_userId_fkey\" FOREIGN KEY (\"userId\") REFERENCES \"User\"(\"id\") ON DELETE CASCADE ON UPDATE CASCADE;",
+        "-- AddForeignKey\nALTER TABLE \"DecklistFavorite\" ADD CONSTRAINT \"DecklistFavorite_decklistId_fkey\" FOREIGN KEY (\"decklistId\") REFERENCES \"Decklist\"(\"id\") ON DELETE CASCADE ON UPDATE CASCADE;"
+      ]
+    },
+    {
+      "name": "SyncRun",
+      "description": "",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            },
+            {
+              "name": "default",
+              "args": "cuid()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "type",
+          "rawType": "SyncType",
+          "baseType": "SyncType",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "synctype",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "status",
+          "rawType": "SyncStatus",
+          "baseType": "SyncStatus",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "syncstatus",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "startedAt",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "now()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "finishedAt",
+          "rawType": "DateTime?",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "recordCount",
+          "rawType": "Int?",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "errorMessage",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [
+        "@@index([type, status, startedAt])"
+      ],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [
+        [
+          "type",
+          "status",
+          "startedAt"
+        ]
+      ],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"SyncRun\" (\n    \"id\" TEXT NOT NULL,\n    \"type\" \"SyncType\" NOT NULL,\n    \"status\" \"SyncStatus\" NOT NULL,\n    \"startedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    \"finishedAt\" TIMESTAMP(3),\n    \"recordCount\" INTEGER,\n    \"errorMessage\" TEXT,\n\n    CONSTRAINT \"SyncRun_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- CreateIndex\nCREATE INDEX \"SyncRun_type_status_startedAt_idx\" ON \"SyncRun\"(\"type\", \"status\", \"startedAt\");"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "fromModel": "Card",
+      "fromField": "faction",
+      "toModel": "Faction",
+      "fkColumns": [
+        "factionCode"
+      ],
+      "refColumns": [
+        "code"
+      ],
+      "optional": false
+    },
+    {
+      "fromModel": "Card",
+      "fromField": "pack",
+      "toModel": "Pack",
+      "fkColumns": [
+        "packCode"
+      ],
+      "refColumns": [
+        "code"
+      ],
+      "optional": true
+    },
+    {
+      "fromModel": "Decklist",
+      "fromField": "identity",
+      "toModel": "Card",
+      "fkColumns": [
+        "identityCode"
+      ],
+      "refColumns": [
+        "code"
+      ],
+      "optional": false
+    },
+    {
+      "fromModel": "DecklistCard",
+      "fromField": "decklist",
+      "toModel": "Decklist",
+      "fkColumns": [
+        "decklistId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "onDelete": "Cascade",
+      "optional": false
+    },
+    {
+      "fromModel": "DecklistCard",
+      "fromField": "card",
+      "toModel": "Card",
+      "fkColumns": [
+        "cardCode"
+      ],
+      "refColumns": [
+        "code"
+      ],
+      "optional": false
+    },
+    {
+      "fromModel": "Ruling",
+      "fromField": "card",
+      "toModel": "Card",
+      "fkColumns": [
+        "cardCode"
+      ],
+      "refColumns": [
+        "code"
+      ],
+      "optional": false
+    },
+    {
+      "fromModel": "RuleMapping",
+      "fromField": "ruleSection",
+      "toModel": "RuleSection",
+      "fkColumns": [
+        "ruleSectionId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "optional": false
+    },
+    {
+      "fromModel": "Account",
+      "fromField": "user",
+      "toModel": "User",
+      "fkColumns": [
+        "userId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "onDelete": "Cascade",
+      "optional": false
+    },
+    {
+      "fromModel": "Session",
+      "fromField": "user",
+      "toModel": "User",
+      "fkColumns": [
+        "userId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "onDelete": "Cascade",
+      "optional": false
+    },
+    {
+      "fromModel": "CardFavorite",
+      "fromField": "user",
+      "toModel": "User",
+      "fkColumns": [
+        "userId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "onDelete": "Cascade",
+      "optional": false
+    },
+    {
+      "fromModel": "CardFavorite",
+      "fromField": "card",
+      "toModel": "Card",
+      "fkColumns": [
+        "cardCode"
+      ],
+      "refColumns": [
+        "code"
+      ],
+      "onDelete": "Cascade",
+      "optional": false
+    },
+    {
+      "fromModel": "DecklistFavorite",
+      "fromField": "user",
+      "toModel": "User",
+      "fkColumns": [
+        "userId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "onDelete": "Cascade",
+      "optional": false
+    },
+    {
+      "fromModel": "DecklistFavorite",
+      "fromField": "decklist",
+      "toModel": "Decklist",
+      "fkColumns": [
+        "decklistId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "onDelete": "Cascade",
+      "optional": false
+    }
+  ]
+}
