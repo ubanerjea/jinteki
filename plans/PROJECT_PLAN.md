@@ -40,6 +40,19 @@ A web app to capture, search, and view Android: Netrunner card data (FFG core se
 
 - **Local-only** for now (Docker Compose Postgres, localhost Next.js). No hosting, no production OAuth app registration, no hosted Postgres yet. Revisit once the core loop (browse/search cards & decklists, rulings, rules glossary, favorites) is solid.
 
+## Phases
+
+Build proceeds in numbered phases (`plans/PHASE_N_PLAN.md`), each with a task report in
+`agent-reports/`. This list is **open-ended, not a fixed roadmap** — new phases get added
+over time as work is planned, rather than the full set being decided up front.
+
+1. **Foundation** — Next.js scaffold, Postgres/Prisma schema, Auth.js (GitHub OAuth) with roles.
+2. **NRDB data sync** — cards, factions, packs, decklists, rulings; `SyncRun` log + admin trigger UI.
+3. **Rules-doc scraper** — `RuleSection` data from NSG's Comprehensive Rules, curated `RuleMapping`.
+4. **Cards/decklists browsing UI** — search, filters, detail pages, Postgres trigram search.
+5. **Rules glossary UI, right-click integration, favorites, admin polish, global nav/auth.**
+6. **NRDB-UX-research-inspired enhancements** — pack filter, operator search syntax, MWL data, etc. (planned, not yet built).
+
 ## Phase verification standards
 
 Every phase plan (`plans/PHASE_N_PLAN.md`) should include, at minimum, the following checks in its own "Verification" section — run for real with captured output, not asserted from code inspection alone. These were distilled from real gaps caught (and in one case, missed and later caught) during Phase 1 and Phase 2:
