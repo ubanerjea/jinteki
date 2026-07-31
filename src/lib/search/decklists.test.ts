@@ -49,6 +49,30 @@ describe("searchDecklists (real DB)", () => {
     ).toBe(true);
   });
 
+  // plans/SEARCH_MATCHING.md: word_similarity('rush', 'Crushed Fingers') =
+  // 0.4, below the 0.6 word_similarity_threshold, so this specific case only
+  // matches via the ILIKE substring fallback, not `<%` alone - pinning it
+  // guards that fallback, not just the primary word_similarity path. Note
+  // this is deliberately *not* the "rsh" typo case: "rush" here is a clean
+  // substring of a longer word, which is the documented gap `%`-only
+  // matching used to miss; "rsh" (a dropped-letter typo) is a separate,
+  // accepted gap that no substring technique here is meant to solve.
+  it('a whole word matches as a substring of a longer word ("rush" -> "Crushed Fingers")', async () => {
+    // Plain q="rush" alone returns 673 matches on the real dataset (per
+    // plans/SEARCH_MATCHING.md) with "Crushed Fingers" scoring only 0.4
+    // (below the word_similarity threshold, an ILIKE-only match) - it ranks
+    // deep in that list, past MAX_PAGE_SIZE. Narrow with the identity filter
+    // (same pattern as the other identity-filter tests above) so the
+    // pinned row is reachable within a single page without asserting
+    // anything about its rank.
+    const result = await searchDecklists({
+      q: "rush",
+      identity: "pravdivost_consulting_political_solutions",
+      pageSize: 50,
+    });
+    expect(result.items.map((d) => d.name)).toContain("Crushed Fingers");
+  });
+
   it("identity filter matches a direct count and every row has that identity", async () => {
     const directCount = await prisma.decklist.count({
       where: { identityCode: "nbn_the_world_is_yours" },
@@ -116,13 +140,21 @@ describe("searchDecklists (real DB)", () => {
   // though that was also run - see agent-reports/phase-4.md) so a future
   // change that accidentally defeats the index (e.g. wrapping `name` in a
   // function) gets caught by `pnpm test`.
+  //
+  // Query shape updated for plans/SEARCH_MATCHING.md's `<%`/ILIKE change
+  // (this test previously pinned the pre-change `%`/similarity() query,
+  // which searchDecklists() no longer issues - a stale EXPLAIN target
+  // wouldn't have caught a real regression in the actual query path).
+  // Confirmed directly via psql that both conditions still hit the same
+  // index via a BitmapOr (`Decklist_name_trgm_idx` scanned once for the
+  // `%>` word-similarity condition, once for the `ILIKE` condition).
   it("the name-search query plan uses the trigram GIN index, not a sequential scan", async () => {
     const rows = await prisma.$queryRaw<{ "QUERY PLAN": string }[]>`
       EXPLAIN SELECT d.id, d.name, d."identityCode" AS "identityCode", c.title AS "identityTitle"
       FROM "Decklist" d
       JOIN "Card" c ON c.code = d."identityCode"
-      WHERE d.name % 'NBN Rush'
-      ORDER BY similarity(d.name, 'NBN Rush') DESC, d.name ASC
+      WHERE ('NBN Rush' <% d.name OR d.name ILIKE '%NBN Rush%')
+      ORDER BY word_similarity('NBN Rush', d.name) DESC, d.name ASC
       LIMIT 30 OFFSET 0
     `;
     const planText = rows.map((r) => r["QUERY PLAN"]).join("\n");

@@ -57,8 +57,12 @@ export async function searchRuleSections(
   const pageSize = parsePageSize(params.pageSize);
   const q = params.q?.trim() || undefined;
 
+  // `<%` (word_similarity) over `%` (whole-string similarity), plus a
+  // plain `ILIKE` substring safety net - see cards.ts /
+  // plans/SEARCH_MATCHING.md.
+  const likeQ = q ? `%${q}%` : undefined;
   const whereSql = q
-    ? Prisma.sql`WHERE (title % ${q} OR "bodyText" % ${q})`
+    ? Prisma.sql`WHERE (${q} <% title OR title ILIKE ${likeQ} OR ${q} <% "bodyText" OR "bodyText" ILIKE ${likeQ})`
     : Prisma.empty;
 
   // No free-text query: browse in natural (numeric) section order. With a
@@ -66,7 +70,7 @@ export async function searchRuleSections(
   // for ties (rather than title-alphabetical, which would be a strange
   // secondary sort for numbered doc sections).
   const orderSql = q
-    ? Prisma.sql`ORDER BY GREATEST(similarity(title, ${q}), similarity("bodyText", ${q})) DESC, ${NATURAL_ID_ORDER} ASC`
+    ? Prisma.sql`ORDER BY GREATEST(word_similarity(${q}, title), word_similarity(${q}, "bodyText")) DESC, ${NATURAL_ID_ORDER} ASC`
     : Prisma.sql`ORDER BY ${NATURAL_ID_ORDER} ASC`;
 
   const [items, totalRows] = await Promise.all([

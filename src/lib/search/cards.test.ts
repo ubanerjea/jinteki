@@ -59,6 +59,45 @@ describe("searchCards (real DB)", () => {
     expect(result.items.map((c) => c.title)).toContain("Sure Gamble");
   });
 
+  it("a dropped-letter typo of a longer word still matches (eficiency -> Efficiency)", async () => {
+    // plans/SEARCH_MATCHING.md's "eficiency" case: single dropped letter,
+    // still within word_similarity's reach (unlike the "rsh"->"Rush" case,
+    // which is a documented, accepted gap - not guarded here).
+    const result = await searchCards({ q: "eficiency" });
+    expect(result.items.map((c) => c.title)).toContain(
+      "Bioroid Efficiency Research",
+    );
+  });
+
+  // plans/SEARCH_MATCHING.md: pg_trgm's `%`/similarity() (whole-string
+  // comparison) diluted "bioroid" below its 0.3 threshold against the full
+  // title "Bioroid Efficiency Research", silently dropping it. Pinned here
+  // so a future refactor back to whole-string-only matching regresses
+  // loudly instead of silently.
+  it('a short word matches as a substring of a longer title ("bioroid" -> "Bioroid Efficiency Research")', async () => {
+    const result = await searchCards({ q: "bioroid", pageSize: 50 });
+    expect(result.items.map((c) => c.title)).toContain(
+      "Bioroid Efficiency Research",
+    );
+  });
+
+  // Guards GREATEST(word_similarity(title,...), word_similarity(text,...))
+  // ordering, not just the filter: for q="haas bioroid", confirmed directly
+  // against the real dataset that "Haas-Bioroid: Precision Design" (a title
+  // match, word_similarity = 1) and "Sensor Net Activation" (an incidental
+  // text-only mention, word_similarity = 0.615) both pass the filter, but
+  // at different scores - the title match must rank strictly above the
+  // text-only one, not just happen to sort near it.
+  it("a title-level match outranks a text-level incidental mention for the same query", async () => {
+    const result = await searchCards({ q: "haas bioroid", pageSize: 50 });
+    const titles = result.items.map((c) => c.title);
+    const titleMatchIndex = titles.indexOf("Haas-Bioroid: Precision Design");
+    const textOnlyMatchIndex = titles.indexOf("Sensor Net Activation");
+    expect(titleMatchIndex).toBeGreaterThanOrEqual(0);
+    expect(textOnlyMatchIndex).toBeGreaterThanOrEqual(0);
+    expect(titleMatchIndex).toBeLessThan(textOnlyMatchIndex);
+  });
+
   it("faction filter matches a direct count", async () => {
     const directCount = await prisma.card.count({
       where: { factionCode: "anarch" },

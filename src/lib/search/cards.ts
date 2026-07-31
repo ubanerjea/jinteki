@@ -107,12 +107,18 @@ export async function searchCards(
     conditions.push(Prisma.sql`${params.keyword} = ANY("keywords")`);
   }
   if (q) {
-    // `%` is pg_trgm's similarity operator (true when similarity exceeds
-    // pg_trgm.similarity_threshold, default 0.3 - confirmed sensible on real
-    // data at build time, see agent-reports/phase-4.md). Matching against
-    // either title or text, per PHASE_4_PLAN.md's "free-text trigram search
-    // across title+text".
-    conditions.push(Prisma.sql`(title % ${q} OR text % ${q})`);
+    // `<%` is pg_trgm's word-similarity operator (true when
+    // word_similarity(q, column) exceeds pg_trgm.word_similarity_threshold,
+    // default 0.6) - the best-matching substring of the column against q,
+    // instead of `%`/similarity()'s whole-column comparison, so a short
+    // query isn't diluted by the rest of a long title/text. `ILIKE` is
+    // OR'd in as a plain-substring safety net for anything word_similarity
+    // still misses (e.g. very short queries) - measured as cheap even
+    // unindexed at this table's size. See plans/SEARCH_MATCHING.md.
+    const likeQ = `%${q}%`;
+    conditions.push(
+      Prisma.sql`(${q} <% title OR title ILIKE ${likeQ} OR ${q} <% text OR text ILIKE ${likeQ})`,
+    );
   }
 
   const whereSql = conditions.length
@@ -135,7 +141,7 @@ export async function searchCards(
   const orderSql = explicitOrderColumn
     ? Prisma.sql`ORDER BY ${explicitOrderColumn} ASC, title ASC`
     : q
-      ? Prisma.sql`ORDER BY GREATEST(similarity(title, ${q}), similarity(coalesce(text, ''), ${q})) DESC, title ASC`
+      ? Prisma.sql`ORDER BY GREATEST(word_similarity(${q}, title), word_similarity(${q}, coalesce(text, ''))) DESC, title ASC`
       : Prisma.sql`ORDER BY title ASC`;
 
   const [items, totalRows] = await Promise.all([

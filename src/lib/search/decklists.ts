@@ -57,7 +57,12 @@ export async function searchDecklists(
     conditions.push(Prisma.sql`d."identityCode" = ${params.identity}`);
   }
   if (q) {
-    conditions.push(Prisma.sql`d.name % ${q}`);
+    // See cards.ts / plans/SEARCH_MATCHING.md - `<%` (word_similarity) over
+    // `%` (whole-string similarity) so a short query isn't diluted by the
+    // rest of a long decklist name, plus a plain `ILIKE` substring
+    // safety net.
+    const likeQ = `%${q}%`;
+    conditions.push(Prisma.sql`(${q} <% d.name OR d.name ILIKE ${likeQ})`);
   }
 
   const whereSql = conditions.length
@@ -65,7 +70,7 @@ export async function searchDecklists(
     : Prisma.empty;
 
   const orderSql = q
-    ? Prisma.sql`ORDER BY similarity(d.name, ${q}) DESC, d.name ASC`
+    ? Prisma.sql`ORDER BY word_similarity(${q}, d.name) DESC, d.name ASC`
     : Prisma.sql`ORDER BY d.name ASC`;
 
   const [items, totalRows] = await Promise.all([
