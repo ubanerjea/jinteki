@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CardReference } from "@/components/card-reference";
+import { DecklistFavoriteToggle } from "@/components/favorite-toggle-form";
 import { formatCode } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+
+import { auth } from "../../../../auth";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +28,15 @@ export default async function DecklistDetailPage({
   if (!decklist) {
     notFound();
   }
+
+  const session = await auth();
+  const favorited = session?.user
+    ? Boolean(
+        await prisma.decklistFavorite.findUnique({
+          where: { userId_decklistId: { userId: session.user.id, decklistId: id } },
+        }),
+      )
+    : false;
 
   // NRDB's own `card_slots` data includes the identity as a slot (confirmed
   // directly against raw decklist JSON: `num_cards` matches the slot-quantity
@@ -53,21 +66,26 @@ export default async function DecklistDetailPage({
         </Link>
       </div>
 
-      <div>
-        <h1 className="text-2xl font-semibold">{decklist.name}</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Identity:{" "}
-          <Link
-            href={`/cards/${decklist.identity.code}`}
-            className="underline"
-          >
-            {decklist.identity.title}
-          </Link>{" "}
-          ({formatCode(decklist.identity.factionCode)})
-        </p>
-        <p className="text-sm text-zinc-500">
-          {totalCards} card{totalCards === 1 ? "" : "s"} total
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">{decklist.name}</h1>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Identity:{" "}
+            <CardReference code={decklist.identity.code}>
+              <Link
+                href={`/cards/${decklist.identity.code}`}
+                className="underline"
+              >
+                {decklist.identity.title}
+              </Link>
+            </CardReference>{" "}
+            ({formatCode(decklist.identity.factionCode)})
+          </p>
+          <p className="text-sm text-zinc-500">
+            {totalCards} card{totalCards === 1 ? "" : "s"} total
+          </p>
+        </div>
+        <DecklistFavoriteToggle id={decklist.id} favorited={favorited} />
       </div>
 
       <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -76,9 +94,11 @@ export default async function DecklistDetailPage({
             key={dc.cardCode}
             className="flex items-center justify-between py-1.5"
           >
-            <Link href={`/cards/${dc.cardCode}`} className="underline">
-              {dc.card.title}
-            </Link>
+            <CardReference code={dc.cardCode}>
+              <Link href={`/cards/${dc.cardCode}`} className="underline">
+                {dc.card.title}
+              </Link>
+            </CardReference>
             <span className="text-sm text-zinc-500">x{dc.quantity}</span>
           </li>
         ))}

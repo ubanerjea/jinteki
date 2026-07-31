@@ -28,6 +28,12 @@ export default function Home() {
           >
             Browse Decklists
           </Link>
+          <Link
+            href="/rules"
+            className="flex h-12 w-40 items-center justify-center rounded-full border border-solid border-black/[.08] transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            Browse Rules
+          </Link>
         </div>
       </main>
     </div>

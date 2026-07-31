@@ -114,4 +114,88 @@ describe("searchCards (real DB)", () => {
     const result = await searchCards({ side: "runner", pageSize: 1 });
     expect(result.total).toBe(directCount);
   });
+
+  // Phase 5: keyword filter (array-containment on Card.keywords).
+  describe("keyword filter", () => {
+    it("matches a direct count using array `has`", async () => {
+      const directCount = await prisma.card.count({
+        where: { keywords: { has: "virus" } },
+      });
+      const result = await searchCards({ keyword: "virus", pageSize: 100 });
+      expect(result.total).toBe(directCount);
+      expect(result.total).toBeGreaterThan(0);
+    });
+
+    it("every row returned actually has the keyword", async () => {
+      const result = await searchCards({ keyword: "icebreaker", pageSize: 50 });
+      const codes = result.items.map((c) => c.code);
+      const rows = await prisma.card.findMany({
+        where: { code: { in: codes } },
+        select: { code: true, keywords: true },
+      });
+      expect(rows.length).toBe(codes.length);
+      expect(rows.every((r) => r.keywords.includes("icebreaker"))).toBe(true);
+    });
+
+    it("combines keyword with faction/side/type filters", async () => {
+      const directCount = await prisma.card.count({
+        where: { keywords: { has: "icebreaker" }, sideCode: "runner" },
+      });
+      const result = await searchCards({
+        keyword: "icebreaker",
+        side: "runner",
+        pageSize: 100,
+      });
+      expect(result.total).toBe(directCount);
+    });
+  });
+
+  // Phase 5: explicit sort control.
+  describe("order param", () => {
+    it("defaults to alphabetical-by-title when order is absent (unchanged behavior)", async () => {
+      const result = await searchCards({ pageSize: 20 });
+      const titles = result.items.map((c) => c.title);
+      // Compare against Postgres's own ORDER BY title ASC (via Prisma's
+      // query builder) rather than JS `localeCompare` - the DB's default
+      // collation doesn't always agree with JS string sort (e.g. "Ad
+      // Blitz" vs "Adam: ..."), and it's the DB's ordering searchCards()
+      // actually promises, not JS's.
+      const direct = await prisma.card.findMany({
+        orderBy: { title: "asc" },
+        take: 20,
+        select: { title: true },
+      });
+      expect(titles).toEqual(direct.map((c) => c.title));
+    });
+
+    it("order=faction actually changes result order to group by faction", async () => {
+      const result = await searchCards({ order: "faction", pageSize: 100 });
+      const factions = result.items.map((c) => c.factionCode);
+      const sorted = [...factions].sort((a, b) => a.localeCompare(b));
+      expect(factions).toEqual(sorted);
+      // Confirm it's not incidentally identical to plain title order too.
+      const titleOrderResult = await searchCards({ pageSize: 100 });
+      expect(result.items.map((c) => c.code)).not.toEqual(
+        titleOrderResult.items.map((c) => c.code),
+      );
+    });
+
+    it("order=type groups results by typeCode", async () => {
+      const result = await searchCards({ order: "type", pageSize: 100 });
+      const types = result.items.map((c) => c.typeCode);
+      const sorted = [...types].sort((a, b) => a.localeCompare(b));
+      expect(types).toEqual(sorted);
+    });
+
+    it("an unrecognized order value is ignored (falls back to default behavior)", async () => {
+      const result = await searchCards({
+        order: "not-a-real-column",
+        pageSize: 20,
+      });
+      const defaultResult = await searchCards({ pageSize: 20 });
+      expect(result.items.map((c) => c.code)).toEqual(
+        defaultResult.items.map((c) => c.code),
+      );
+    });
+  });
 });

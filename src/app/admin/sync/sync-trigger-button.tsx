@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 // Client component: POSTs to the admin sync API route, then refreshes the
-// server-rendered page so the updated SyncRun row shows up. Deliberately
-// unstyled (functional only) per PHASE_2_PLAN.md's scope for this page.
+// server-rendered page so the updated SyncRun row shows up. Restyled in
+// Phase 5 to match the rest of the app's Tailwind conventions (the
+// functionality itself is unchanged from Phase 2).
 export function SyncTriggerButton({ urlType }: { urlType: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -31,11 +32,17 @@ export function SyncTriggerButton({ urlType }: { urlType: string }) {
   }
 
   return (
-    <div>
-      <button onClick={trigger} disabled={pending}>
+    <div className="flex flex-col items-start gap-1">
+      <button
+        onClick={trigger}
+        disabled={pending}
+        className="rounded bg-foreground px-3 py-1 text-xs font-medium text-background disabled:opacity-50"
+      >
         {pending ? "Syncing..." : "Trigger"}
       </button>
-      {error ? <p style={{ color: "red" }}>{error}</p> : null}
+      {error ? (
+        <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+      ) : null}
     </div>
   );
 }

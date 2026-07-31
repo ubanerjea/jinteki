@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CardReference } from "@/components/card-reference";
+import { FacetLink } from "@/components/facet-link";
+import { CardFavoriteToggle } from "@/components/favorite-toggle-form";
 import { getCardImageUrl } from "@/lib/card-image";
 import { renderCardText } from "@/lib/card-text";
-import { formatCode } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+
+import { auth } from "../../../../auth";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +47,15 @@ export default async function CardDetailPage({
     notFound();
   }
 
+  const session = await auth();
+  const favorited = session?.user
+    ? Boolean(
+        await prisma.cardFavorite.findUnique({
+          where: { userId_cardCode: { userId: session.user.id, cardCode: code } },
+        }),
+      )
+    : false;
+
   const attributes = (card.raw as { attributes?: Record<string, unknown> })
     .attributes ?? {};
   const narrativeText =
@@ -76,26 +89,39 @@ export default async function CardDetailPage({
           // and re-encode through this app's own server, which is a form of
           // caching/processing the architecture decision explicitly opted
           // out of.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt={card.title}
-            width={300}
-            height={419}
-            className="h-fit w-[300px] rounded"
-          />
+          <CardReference code={card.code} className="block h-fit w-[300px]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt={card.title}
+              width={300}
+              height={419}
+              className="h-fit w-[300px] rounded"
+            />
+          </CardReference>
         )}
 
         <div className="flex flex-1 flex-col gap-3">
-          <h1 className="text-2xl font-semibold">{card.title}</h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            {formatCode(card.factionCode)} - {formatCode(card.typeCode)} -{" "}
-            {formatCode(card.sideCode)}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardReference code={card.code}>
+              <h1 className="text-2xl font-semibold">{card.title}</h1>
+            </CardReference>
+            <CardFavoriteToggle code={card.code} favorited={favorited} />
+          </div>
+          <p className="flex flex-wrap items-center gap-1 text-sm text-zinc-600 dark:text-zinc-400">
+            <FacetLink kind="faction" value={card.factionCode} />
+            <span>-</span>
+            <FacetLink kind="type" value={card.typeCode} />
+            <span>-</span>
+            <FacetLink kind="side" value={card.sideCode} />
           </p>
 
           {card.keywords.length > 0 && (
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Subtypes: {card.keywords.map(formatCode).join(", ")}
+            <p className="flex flex-wrap items-center gap-1 text-sm text-zinc-600 dark:text-zinc-400">
+              Subtypes:{" "}
+              {card.keywords.map((keyword) => (
+                <FacetLink key={keyword} kind="keyword" value={keyword} />
+              ))}
             </p>
           )}
 
