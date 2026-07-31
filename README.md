@@ -56,6 +56,18 @@ Stop the same way as dev mode above.
 
 ## Viewing the Postgres database
 
+### Managing the container
+
+Run from the repo root (needs `docker-compose.yml`):
+
+| Task | Command |
+|---|---|
+| View running Docker containers | `docker ps` |
+| Check Postgres is up (healthy) | `docker compose ps` |
+| Start an existing (stopped) container | `docker compose start` |
+| Stop the container | `docker compose stop` |
+| Compose up (create/recreate + start, picking up any `docker-compose.yml` changes) | `docker compose up -d` |
+
 The Docker container publishes port 5432 to the host, so any Postgres client works, not just tools run inside the container.
 
 | Method | Where to run it | Command / connection |
