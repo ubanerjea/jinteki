@@ -54,6 +54,16 @@ pnpm start
 
 Stop the same way as dev mode above.
 
+### Checking whether it's up
+
+Works regardless of dev or production mode — makes a real HTTP request rather than just checking that a process exists:
+
+```powershell
+Invoke-WebRequest -Uri http://localhost:3000 -UseBasicParsing | Select-Object StatusCode
+```
+
+`StatusCode 200` means the app is up and serving requests. If it errors out (e.g. "Unable to connect"), nothing is listening on port 3000.
+
 ## Viewing the Postgres database
 
 ### Managing the container
