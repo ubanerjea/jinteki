@@ -6,6 +6,7 @@
 // synced DB (see agent-reports/phase-2.md); vitest.config.ts loads
 // DATABASE_URL from .env so these run the same way `pnpm test` always has.
 
+import { Prisma } from "@prisma/client";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { prisma } from "@/lib/prisma";
@@ -236,5 +237,166 @@ describe("searchCards (real DB)", () => {
         defaultResult.items.map((c) => c.code),
       );
     });
+  });
+
+  // Phase 6 item 1: pack filter.
+  describe("pack filter", () => {
+    it("matches a direct count using packCode equality", async () => {
+      const directCount = await prisma.card.count({
+        where: { packCode: "core_set" },
+      });
+      const result = await searchCards({ pack: "core_set", pageSize: 200 });
+      expect(result.total).toBe(directCount);
+      expect(result.total).toBeGreaterThan(0);
+      expect(result.items.every((c) => c.packCode === "core_set")).toBe(true);
+    });
+
+    it("combines with faction filter", async () => {
+      const directCount = await prisma.card.count({
+        where: { packCode: "core_set", factionCode: "anarch" },
+      });
+      const result = await searchCards({
+        pack: "core_set",
+        faction: "anarch",
+        pageSize: 200,
+      });
+      expect(result.total).toBe(directCount);
+    });
+  });
+
+  // format-descriptions-links-and-search-plan.md §5, Option A: format
+  // membership filter (JSONB containment on Card.raw.attributes.format_ids).
+  describe("format filter", () => {
+    it("matches a direct count using JSONB containment (77 for system_gateway, per the plan's §2b measurement)", async () => {
+      const directCount = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`SELECT count(*)::bigint AS count FROM "Card" WHERE raw->'attributes'->'format_ids' @> '"system_gateway"'::jsonb`,
+      );
+      const expected = Number(directCount[0].count);
+      expect(expected).toBe(77);
+
+      const result = await searchCards({ format: "system_gateway", pageSize: 100 });
+      expect(result.total).toBe(expected);
+    });
+
+    it("every row returned actually has the format in its format_ids", async () => {
+      const result = await searchCards({ format: "system_gateway", pageSize: 100 });
+      const codes = result.items.map((c) => c.code);
+      const rows = await prisma.$queryRaw<{ code: string }[]>(
+        Prisma.sql`SELECT code FROM "Card" WHERE code = ANY(${codes}) AND raw->'attributes'->'format_ids' @> '"system_gateway"'::jsonb`,
+      );
+      expect(rows.length).toBe(codes.length);
+    });
+
+    it("combines with faction filter (AND semantics)", async () => {
+      const directCount = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`SELECT count(*)::bigint AS count FROM "Card" WHERE raw->'attributes'->'format_ids' @> '"eternal"'::jsonb AND "factionCode" = 'anarch'`,
+      );
+      const expected = Number(directCount[0].count);
+
+      const result = await searchCards({
+        format: "eternal",
+        faction: "anarch",
+        pageSize: 200,
+      });
+      expect(result.total).toBe(expected);
+    });
+
+    it("spot-checks the other formats' membership counts against the plan's §2b measurements", async () => {
+      const counts = await prisma.$queryRaw<{ id: string; count: bigint }[]>(
+        Prisma.sql`
+          SELECT f.id, count(c.code)::bigint AS count
+          FROM "Format" f
+          LEFT JOIN "Card" c ON (c.raw->'attributes'->'format_ids') @> to_jsonb(f.id)
+          WHERE f.id IN ('eternal', 'standard', 'snapshot')
+          GROUP BY f.id
+        `,
+      );
+      const byId = Object.fromEntries(counts.map((r) => [r.id, Number(r.count)]));
+      expect(byId.eternal).toBe(2017);
+      expect(byId.standard).toBe(2016);
+      expect(byId.snapshot).toBe(1181);
+    });
+  });
+
+  // Phase 6 item 6: field:value operator syntax, real-DB integration case
+  // (unit tests for parseCardSearchParams's parsing logic itself are below,
+  // no DB needed for those).
+  describe("operator syntax in q (real DB)", () => {
+    it('q: "f:anarch s:virus" (no residual text) matches an equivalent direct query', async () => {
+      const params = parseCardSearchParams({ q: "f:anarch s:virus" });
+      expect(params.faction).toBe("anarch");
+      expect(params.keyword).toBe("virus");
+      expect(params.q).toBeUndefined();
+
+      const directCount = await prisma.card.count({
+        where: { factionCode: "anarch", keywords: { has: "virus" } },
+      });
+      const result = await searchCards(params);
+      expect(result.total).toBe(directCount);
+      expect(result.total).toBeGreaterThan(0);
+      expect(result.items.every((c) => c.factionCode === "anarch")).toBe(true);
+    });
+  });
+});
+
+describe("parseCardSearchParams - operator syntax (item 6)", () => {
+  it("recognizes f: as a faction filter", () => {
+    const result = parseCardSearchParams({ q: "f:anarch" });
+    expect(result.faction).toBe("anarch");
+    expect(result.q).toBeUndefined();
+  });
+
+  it("recognizes t: as a type filter", () => {
+    const result = parseCardSearchParams({ q: "t:ice" });
+    expect(result.type).toBe("ice");
+    expect(result.q).toBeUndefined();
+  });
+
+  it("recognizes s: as a keyword (subtype) filter", () => {
+    const result = parseCardSearchParams({ q: "s:virus" });
+    expect(result.keyword).toBe("virus");
+    expect(result.q).toBeUndefined();
+  });
+
+  it("recognizes d: as a side filter", () => {
+    const result = parseCardSearchParams({ q: "d:runner" });
+    expect(result.side).toBe("runner");
+    expect(result.q).toBeUndefined();
+  });
+
+  it("is case-insensitive on the prefix letter (F:anarch == f:anarch)", () => {
+    const result = parseCardSearchParams({ q: "F:anarch" });
+    expect(result.faction).toBe("anarch");
+  });
+
+  it("folds multiple operators and leaves residual text as q", () => {
+    const result = parseCardSearchParams({ q: "f:anarch s:virus rootkit" });
+    expect(result.faction).toBe("anarch");
+    expect(result.keyword).toBe("virus");
+    expect(result.q).toBe("rootkit");
+  });
+
+  it("leaves an unrecognized prefix as literal text, not stripped", () => {
+    const result = parseCardSearchParams({ q: "x:foo bar" });
+    expect(result.faction).toBeUndefined();
+    expect(result.q).toBe("x:foo bar");
+  });
+
+  it("an explicit dropdown param wins over a matching operator token in q", () => {
+    const result = parseCardSearchParams({ q: "f:anarch", faction: "nbn" });
+    expect(result.faction).toBe("nbn");
+    // The f: token is still stripped out of q even though its value lost -
+    // it was recognized as an operator, not left as literal text.
+    expect(result.q).toBeUndefined();
+  });
+
+  it("an explicit dropdown param for a different field doesn't block an operator for another field", () => {
+    const result = parseCardSearchParams({
+      q: "f:anarch s:virus",
+      side: "runner",
+    });
+    expect(result.faction).toBe("anarch");
+    expect(result.keyword).toBe("virus");
+    expect(result.side).toBe("runner");
   });
 });

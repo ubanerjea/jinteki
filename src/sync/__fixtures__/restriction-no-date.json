@@ -1,0 +1,22 @@
+{
+  "id": "eternal_points_list_1_0",
+  "type": "restrictions",
+  "attributes": {
+    "name": "Eternal Points List, Version 1.0",
+    "date_start": null,
+    "point_limit": 7,
+    "format_id": "eternal",
+    "verdicts": {
+      "banned": [],
+      "restricted": [],
+      "universal_faction_cost": {},
+      "global_penalty": [],
+      "points": { "sifr": 2 }
+    },
+    "banned_subtypes": [],
+    "size": 46,
+    "updated_at": "2026-07-17T18:16:17+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/restrictions/eternal_points_list_1_0" }
+}

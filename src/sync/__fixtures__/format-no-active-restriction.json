@@ -1,0 +1,15 @@
+{
+  "id": "ram",
+  "type": "formats",
+  "attributes": {
+    "name": "Random Access Memories",
+    "active_snapshot_id": "ram_7",
+    "snapshot_ids": ["ram_0", "ram_7"],
+    "restriction_ids": [],
+    "active_card_pool_id": "ram_7",
+    "active_restriction_id": null,
+    "updated_at": "2026-07-17T18:16:15+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/formats/ram" }
+}

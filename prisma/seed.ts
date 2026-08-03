@@ -10,6 +10,7 @@
 // this seed can succeed - every ruleSectionId referenced in
 // rule-mapping-data.ts must already exist as a real RuleSection row.
 import { PrismaClient } from "@prisma/client";
+import { formatDescriptionData } from "./format-description-data";
 import { ruleMappingData } from "./rule-mapping-data";
 
 const prisma = new PrismaClient();
@@ -47,6 +48,27 @@ async function main() {
 
   console.log(
     `Seeded ${ruleMappingData.length} RuleMapping row(s), deleted ${deletedCount} orphaned row(s).`,
+  );
+
+  // Format.description: hand-curated prose (see format-description-data.ts
+  // for why - NRDB's API has no description field to sync). Format rows
+  // themselves are created/reconciled entirely by
+  // src/sync/sync-restrictions.ts, not this seed - so this only ever
+  // *updates* an existing row's description, never creates or deletes a
+  // Format row. `updateMany` (rather than `update`) is deliberate: it's a
+  // no-op instead of throwing if sync:restrictions hasn't run yet and the
+  // row doesn't exist, so seed order relative to the sync isn't load-bearing.
+  let updatedFormatCount = 0;
+  for (const entry of formatDescriptionData) {
+    const { count } = await prisma.format.updateMany({
+      where: { id: entry.id },
+      data: { description: entry.description },
+    });
+    updatedFormatCount += count;
+  }
+
+  console.log(
+    `Updated description on ${updatedFormatCount}/${formatDescriptionData.length} Format row(s).`,
   );
 }
 

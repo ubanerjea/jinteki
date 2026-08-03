@@ -4,6 +4,27 @@
 // PHASE_1_PLAN.md so later phases (NRDB sync, rules scraper, UI) don't
 // require reshaping migrations. No sync logic, no scraper, and no UI query
 // code exists yet — this is schema-only.
+//
+// *** History: the five pg_trgm GIN indexes below (search `trgm_idx`) ***
+// They were originally created by hand-written SQL in the Phase 1 init
+// migration, NOT declared in this file - Prisma's schema DSL has no way to
+// express `USING GIN (col gin_trgm_ops)` on its own. Because they were
+// invisible to schema.prisma, `prisma migrate dev`'s diff engine treated
+// them as unknown drift and proposed dropping all five on every later
+// migration; three migrations (…add_sync_run_and_ruling_nrdb_id,
+// …add_rules_sync_type, …add_rule_mapping_fk) each had to hand-edit the
+// generated SQL to strip those drops before applying - and one migration
+// (20260731065236_add_formats_restrictions) skipped that edit and actually
+// dropped all five for real. Fixed in two steps: 20260731070336_restore_
+// trgm_indexes recreated them, then 20260803064956_declare_trgm_indexes
+// added the `@@index(..., type: Gin, map: "...")` declarations now present
+// on Card/Decklist/RuleSection below - confirmed via a real `prisma migrate
+// dev --create-only` dry run (twice) that this makes Prisma's diff engine
+// recognize them as already-correct (empty migration generated, no more
+// proposed drops). This class of hazard should now be closed; if a future
+// migration somehow still proposes dropping one of these, something about
+// the index declaration stopped matching reality - investigate rather than
+// just re-applying the drop.
 
 generator client {
   provider = "prisma-client-js"
@@ -50,6 +71,14 @@ model Card {
   decklistCards       DecklistCard[]
   rulings             Ruling[]
   favoritedBy         CardFavorite[]
+
+  // Declares the two pg_trgm GIN indexes hand-written into the Phase 1 init
+  // migration, so `prisma migrate dev`'s diff engine recognizes them as
+  // intentional instead of unexplained drift to drop (see the file-header
+  // warning). `map:` pins the exact existing index name so this is
+  // recognized as the SAME index, not a new one to create alongside it.
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "Card_title_trgm_idx")
+  @@index([text(ops: raw("gin_trgm_ops"))], type: Gin, map: "Card_text_trgm_idx")
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +95,9 @@ model Decklist {
   cards    DecklistCard[]
 
   favoritedBy DecklistFavorite[]
+
+  // See Card's matching comment above.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Decklist_name_trgm_idx")
 }
 
 model DecklistCard {
@@ -124,6 +156,10 @@ model RuleSection {
   bodyText String
 
   mappings RuleMapping[]
+
+  // See Card's matching comment above.
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "RuleSection_title_trgm_idx")
+  @@index([bodyText(ops: raw("gin_trgm_ops"))], type: Gin, map: "RuleSection_bodyText_trgm_idx")
 }
 
 model RuleMapping {
@@ -225,6 +261,59 @@ model DecklistFavorite {
 }
 
 // ---------------------------------------------------------------------------
+// Formats & restrictions (Most Wanted List / format-legality data) — Phase 6.
+// Populated by src/sync/sync-restrictions.ts.
+//
+// Real API shape (verified live against api.netrunnerdb.com/api/v3/public,
+// not the plan's original guessed draft - see agent-reports/phase-6.md):
+// a `Format` (Standard/Startup/Eternal/...) points at whichever `Restriction`
+// (a single named MWL/ban-list snapshot, e.g. "Standard Ban List 26.03") is
+// currently active for it via `activeRestrictionId`. A Restriction's actual
+// banned/restricted/points verdicts are keyed by card code inside `raw`
+// (`attributes.verdicts`) - not flattened into a separate per-card join
+// table, since NRDB's own `cards` resource *also* already carries a per-card
+// `restrictions` history blob (keyed by restriction id) in `Card.raw`, so a
+// second normalized copy of the same banned/restricted/points membership
+// isn't needed to answer "is this card currently banned/restricted in this
+// format" - only the format -> active-restriction-id link was missing, which
+// is what this table actually adds.
+//
+// `activeRestrictionId` is deliberately a plain string, not a Prisma
+// `@relation` - avoids a Format<->Restriction insert-ordering dependency
+// (Format rows are upserted before the Restriction rows they point at exist
+// yet on a first-ever sync), same reasoning Phase 1 used for
+// `RuleMapping.ruleSectionId` before RuleSection had real rows.
+// ---------------------------------------------------------------------------
+
+model Format {
+  id                  String  @id // NRDB format id, e.g. "standard", "eternal"
+  name                String
+  activeRestrictionId String?
+  // Hand-curated prose (prisma/format-description-data.ts, seeded by
+  // prisma/seed.ts), NOT synced from NRDB - the v3 `/formats` API has no
+  // description/summary field at all (confirmed live 2026-07-30, see
+  // agent-reports/format-descriptions-links-and-search-plan.md §2a).
+  // Must stay nullable: src/sync/sync-restrictions.ts's mapFormat() never
+  // sets this field, so `create` (the very first sync, before the seed has
+  // ever run) must not fail a NOT NULL constraint - same ordering hazard as
+  // RuleMapping.ruleSectionId above.
+  description String?
+  raw         Json
+
+  restrictions Restriction[]
+}
+
+model Restriction {
+  id        String    @id // NRDB restriction/snapshot id, e.g. "standard_ban_list_26_03"
+  name      String
+  formatId  String
+  dateStart DateTime?
+  raw       Json
+
+  format Format @relation(fields: [formatId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
 // Sync run log — Phase 2. Populated by src/sync/*.ts. Gives the admin sync
 // page ("did the last sync work, when, how many records") something to show.
 // ---------------------------------------------------------------------------
@@ -235,6 +324,7 @@ enum SyncType {
   DECKLISTS
   RULINGS
   RULES
+  RESTRICTIONS
 }
 
 enum SyncStatus {

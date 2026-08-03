@@ -3,10 +3,13 @@ import { notFound } from "next/navigation";
 
 import { CardReference } from "@/components/card-reference";
 import { FacetLink } from "@/components/facet-link";
+import { FormatLink } from "@/components/format-link";
 import { CardFavoriteToggle } from "@/components/favorite-toggle-form";
 import { getCardImageUrl } from "@/lib/card-image";
 import { renderCardText } from "@/lib/card-text";
+import type { CardRestrictionsAttribute } from "@/lib/nrdb/types";
 import { prisma } from "@/lib/prisma";
+import { computeCardLegality, summarizeLegality } from "@/lib/restrictions";
 
 import { auth } from "../../../../auth";
 
@@ -69,6 +72,39 @@ export default async function CardDetailPage({
     const value = attributes[key];
     return value !== null && value !== undefined && value !== "";
   });
+
+  // Item 2 (PHASE_6_PLAN.md): "Also printed in" - every pack this card was
+  // ever printed in, per NRDB's `card_set_ids` (already available on the
+  // `attributes` extracted above - no new query for the raw data itself).
+  // Confirmed live against real synced rows (agent-reports/phase-6.md) that
+  // every `card_set_ids` entry is literally the same string as `Pack.code`
+  // (2460/2460 matched in a full cross-check) before building this.
+  const cardSetIds = Array.isArray(attributes.card_set_ids)
+    ? (attributes.card_set_ids as unknown[]).filter(
+        (v): v is string => typeof v === "string",
+      )
+    : [];
+  const printedInPacks =
+    cardSetIds.length > 1
+      ? await prisma.pack.findMany({
+          where: { code: { in: cardSetIds } },
+          orderBy: { name: "asc" },
+        })
+      : [];
+
+  // Item 9: current legality/restriction status per format. Formats table
+  // is tiny (6 rows) - always fetched in full, no filtering needed.
+  const formats = await prisma.format.findMany();
+  const legality = computeCardLegality(
+    Array.isArray(attributes.format_ids)
+      ? (attributes.format_ids as unknown[]).filter(
+          (v): v is string => typeof v === "string",
+        )
+      : undefined,
+    attributes.restrictions as CardRestrictionsAttribute | undefined,
+    formats,
+  );
+  const legalityLines = summarizeLegality(legality);
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-10">
@@ -150,6 +186,36 @@ export default async function CardDetailPage({
 
           {card.pack && (
             <p className="text-sm text-zinc-500">Pack: {card.pack.name}</p>
+          )}
+
+          {printedInPacks.length > 0 && (
+            <p className="flex flex-wrap items-center gap-1 text-sm text-zinc-500">
+              Also printed in:{" "}
+              {printedInPacks.map((pack, i) => (
+                <span key={pack.code}>
+                  {i > 0 && ", "}
+                  <Link href={`/cards?pack=${pack.code}`} className="underline">
+                    {pack.name}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
+
+          {legalityLines.length > 0 && (
+            <div className="flex flex-col gap-0.5 text-sm text-zinc-500">
+              {legalityLines.map((line) => (
+                <p key={line.label} className="flex flex-wrap items-center gap-1">
+                  <span>{line.label}:</span>
+                  {line.entries.map((entry, i) => (
+                    <span key={entry.formatId}>
+                      {i > 0 && ", "}
+                      <FormatLink formatId={entry.formatId} formatName={entry.formatName} />
+                    </span>
+                  ))}
+                </p>
+              ))}
+            </div>
           )}
         </div>
       </div>

@@ -28,9 +28,60 @@ export interface CardSearchParams {
   side?: string;
   type?: string;
   keyword?: string;
+  pack?: string;
+  format?: string;
   order?: string;
   page?: number | string;
   pageSize?: number | string;
+}
+
+// Item 6 (PHASE_6_PLAN.md): minimal `field:value` operator syntax inside the
+// `q` box, e.g. "f:anarch s:virus rootkit". Maps NRDB's own f/t/s/d operand
+// letters onto the CardSearchParams field each already has a dropdown for.
+// Case-insensitive prefix letter; only these four exact prefixes are
+// recognized - anything else (e.g. "x:foo") is left alone as literal query
+// text, same "don't invent behavior for the unrecognized case" caution
+// src/lib/card-text.tsx's tag parser uses.
+const OPERATOR_FIELD: Record<string, keyof Pick<CardSearchParams, "faction" | "type" | "keyword" | "side">> = {
+  f: "faction",
+  t: "type",
+  s: "keyword",
+  d: "side",
+};
+const OPERATOR_TOKEN = /^(f|t|s|d):(\S+)$/i;
+
+// Splits a raw `q` string into recognized operator tokens (folded into the
+// corresponding field) and residual free text. Explicit dropdown values
+// (already-set `faction`/`type`/`keyword`/`side`) always win over a
+// same-field operator token in `q` - the operator syntax only fills in
+// whatever the dropdown left blank (PHASE_6_PLAN.md's "Things to confirm"
+// precedence rule: dropdown is the primary, discoverable UI; the operator
+// syntax is a power-user shortcut layered on top, not a competing source of
+// truth).
+function extractOperators(
+  q: string,
+  explicit: Pick<CardSearchParams, "faction" | "type" | "keyword" | "side">,
+): { residual: string; derived: Pick<CardSearchParams, "faction" | "type" | "keyword" | "side"> } {
+  const derived: Pick<CardSearchParams, "faction" | "type" | "keyword" | "side"> = {};
+  const residualTokens: string[] = [];
+
+  for (const token of q.split(/\s+/).filter(Boolean)) {
+    const match = token.match(OPERATOR_TOKEN);
+    if (!match) {
+      residualTokens.push(token);
+      continue;
+    }
+    const field = OPERATOR_FIELD[match[1].toLowerCase()];
+    const value = match[2];
+    if (!explicit[field] && !derived[field]) {
+      derived[field] = value;
+    }
+    // Recognized operator token is stripped from the residual text
+    // regardless of whether it ended up being used (dropdown-wins case) -
+    // it was still "consumed" as an operator, not left as free text.
+  }
+
+  return { residual: residualTokens.join(" "), derived };
 }
 
 // Explicit sort control (PHASE_5_PLAN.md, from the Scryfall UX research):
@@ -64,19 +115,46 @@ export interface CardSummary {
 export function parseCardSearchParams(
   input: SearchParamsInput,
 ): Required<Pick<CardSearchParams, "page" | "pageSize">> &
-  Pick<CardSearchParams, "q" | "faction" | "side" | "type" | "keyword" | "order"> {
-  const q = firstParam(input, "q")?.trim();
-  const faction = firstParam(input, "faction")?.trim();
-  const side = firstParam(input, "side")?.trim();
-  const type = firstParam(input, "type")?.trim();
-  const keyword = firstParam(input, "keyword")?.trim();
+  Pick<
+    CardSearchParams,
+    "q" | "faction" | "side" | "type" | "keyword" | "pack" | "format" | "order"
+  > {
+  const qRaw = firstParam(input, "q")?.trim();
+  const explicitFaction = firstParam(input, "faction")?.trim();
+  const explicitSide = firstParam(input, "side")?.trim();
+  const explicitType = firstParam(input, "type")?.trim();
+  const explicitKeyword = firstParam(input, "keyword")?.trim();
+  const pack = firstParam(input, "pack")?.trim();
+  const format = firstParam(input, "format")?.trim();
   const order = firstParam(input, "order")?.trim();
+
+  // Item 6: fold any recognized f:/t:/s:/d: operator tokens out of `q` into
+  // the matching field, before the usual blank -> undefined normalization -
+  // explicit dropdown params (parsed above) always take precedence, per the
+  // extractOperators() precedence rule.
+  const { residual, derived } = qRaw
+    ? extractOperators(qRaw, {
+        faction: explicitFaction,
+        type: explicitType,
+        keyword: explicitKeyword,
+        side: explicitSide,
+      })
+    : { residual: "", derived: {} };
+
+  const q = residual.trim();
+  const faction = explicitFaction || derived.faction;
+  const side = explicitSide || derived.side;
+  const type = explicitType || derived.type;
+  const keyword = explicitKeyword || derived.keyword;
+
   return {
     q: q ? q : undefined,
     faction: faction ? faction : undefined,
     side: side ? side : undefined,
     type: type ? type : undefined,
     keyword: keyword ? keyword : undefined,
+    pack: pack ? pack : undefined,
+    format: format ? format : undefined,
     order: order && order in ORDER_COLUMNS ? order : undefined,
     page: parsePage(firstParam(input, "page")),
     pageSize: parsePageSize(firstParam(input, "pageSize")),
@@ -105,6 +183,27 @@ export async function searchCards(
     // the existing faction/side/type equality-filter pattern exactly, per
     // PHASE_5_PLAN.md.
     conditions.push(Prisma.sql`${params.keyword} = ANY("keywords")`);
+  }
+  if (params.pack) {
+    // Item 1 (PHASE_6_PLAN.md): identical equality-filter pattern to
+    // faction/side/type above - no new pattern introduced.
+    conditions.push(Prisma.sql`"packCode" = ${params.pack}`);
+  }
+  if (params.format) {
+    // Option A (format-descriptions-links-and-search-plan.md §5): filter by
+    // format *membership* ("is this card in format X's pool at all"), not
+    // "currently legal in X" (Option B - materially harder, deferred). No
+    // native Card.formatIds column exists - format_ids lives inside
+    // Card.raw, so this is a JSONB containment check (`@>`) rather than the
+    // `= ANY(...)` pattern the keyword filter above uses against a real
+    // String[] column. `to_jsonb(...)` converts the bound parameter into the
+    // JSONB-scalar shape `@>` needs, keeping it a properly Prisma-
+    // parameterized value (never raw string concatenation, per this file's
+    // header). Confirmed working and performant (13ms unindexed sequential
+    // scan against the real 2054-row table) in the plan's §2b investigation.
+    conditions.push(
+      Prisma.sql`(raw->'attributes'->'format_ids') @> to_jsonb(${params.format}::text)`,
+    );
   }
   if (q) {
     // `<%` is pg_trgm's word-similarity operator (true when

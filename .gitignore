@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local database backups (see prisma/pg_dump/README.md) - large (tens-hundreds
+# of MB) and fully re-creatable via `pnpm sync:all`, so not committed
+/prisma/pg_dump/*.dump

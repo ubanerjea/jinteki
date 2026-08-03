@@ -1,0 +1,19 @@
+{
+  "id": "standard",
+  "type": "formats",
+  "attributes": {
+    "name": "Standard",
+    "active_snapshot_id": "standard_34",
+    "snapshot_ids": ["standard_0", "standard_34"],
+    "restriction_ids": ["standard_ban_list_26_03"],
+    "active_card_pool_id": "standard_34",
+    "active_restriction_id": "standard_ban_list_26_03",
+    "updated_at": "2026-07-17T18:16:15+00:00"
+  },
+  "relationships": {
+    "card_pools": { "links": { "related": "https://api.netrunnerdb.com/api/v3/public/card_pools?filter[format_id]=standard" } },
+    "snapshots": { "links": { "related": "https://api.netrunnerdb.com/api/v3/public/snapshots?filter[format_id]=standard" } },
+    "restrictions": { "links": { "related": "https://api.netrunnerdb.com/api/v3/public/restrictions?filter[format_id]=standard" } }
+  },
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/formats/standard" }
+}

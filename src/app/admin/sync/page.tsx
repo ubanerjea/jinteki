@@ -19,6 +19,7 @@ const SYNC_TYPES: { urlType: string; type: SyncType; label: string }[] = [
   { urlType: "decklists", type: SyncType.DECKLISTS, label: "Decklists" },
   { urlType: "rulings", type: SyncType.RULINGS, label: "Rulings" },
   { urlType: "rules", type: SyncType.RULES, label: "Rules (Comprehensive Rules glossary)" },
+  { urlType: "restrictions", type: SyncType.RESTRICTIONS, label: "Restrictions (MWL / format legality)" },
 ];
 
 const STATUS_STYLES: Record<string, string> = {

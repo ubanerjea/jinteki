@@ -1,0 +1,24 @@
+{
+  "id": "standard_ban_list_26_03",
+  "type": "restrictions",
+  "attributes": {
+    "name": "Standard Ban List 26.03",
+    "date_start": "2026-03-13",
+    "point_limit": null,
+    "format_id": "standard",
+    "verdicts": {
+      "banned": ["salvaged_vanadis_armory"],
+      "restricted": [],
+      "universal_faction_cost": {},
+      "global_penalty": [],
+      "points": {}
+    },
+    "banned_subtypes": [],
+    "size": 29,
+    "updated_at": "2026-07-17T18:16:17+00:00"
+  },
+  "relationships": {
+    "format": { "links": { "related": "https://api.netrunnerdb.com/api/v3/public/formats/standard" } }
+  },
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/restrictions/standard_ban_list_26_03" }
+}

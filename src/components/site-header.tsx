@@ -30,6 +30,9 @@ export async function SiteHeader() {
           <Link href="/rules" className="text-zinc-600 hover:underline dark:text-zinc-300">
             Rules
           </Link>
+          <Link href="/formats" className="text-zinc-600 hover:underline dark:text-zinc-300">
+            Formats
+          </Link>
           {user && (
             <Link
               href="/favorites"
