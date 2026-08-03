@@ -192,7 +192,12 @@ link, so that's the only new normalized data:
   banned. `summarizeLegality()` groups that into display lines.
 - `src/app/cards/[code]/page.tsx`: renders "Legal in: ...", "Banned in:
   ...", "N pts in: ...", "+N influence in: ..." lines, filtered to formats
-  the card actually belongs to.
+  the card actually belongs to. (Superseded per
+  `format-descriptions-links-and-search-build.md` §4a:
+  `summarizeLegality()`'s return type was changed from `string[]` to a
+  structured `LegalityLine[]` carrying `formatId`, and each format name in
+  these lines is now a link to `/formats/{formatId}` via a new `FormatLink`
+  component, rather than plain text.)
 
 **Verification (real data, not self-reported):**
 - Sync row counts: `Format` = 6, `Restriction` = 56 via direct `psql`,
@@ -342,10 +347,18 @@ change for this item. Revisit only if jinteki ever adds per-printing sync.
   via two independent `migrate dev --create-only` dry runs both coming back
   empty — not just patched for this one incident. No outstanding action
   needed here.
-- Item 9's optional stretch (a `restriction`/format filter on `/cards`) was
-  explicitly not required by the plan and not built — the core ask
-  (surface current status on the detail page) is what was built.
-- Item 9's "restriction history" (showing superseded snapshots, not just
-  the active one) is explicitly deferred per the plan.
+- ~~Item 9's optional stretch (a `restriction`/format filter on `/cards`) was
+  explicitly not required by the plan and not built~~ — **since built**, as
+  §5 (Option A) of `agent-reports/format-descriptions-links-and-search-build.md`:
+  `CardSearchParams.format` + a `<select name="format">` on `/cards`, filtering
+  via JSONB containment on `attributes.format_ids`. (Option B — filtering by
+  *currently-legal-in-format* rather than plain format membership — remains
+  out of scope, per that report's own follow-up notes.)
+- ~~Item 9's "restriction history" (showing superseded snapshots, not just
+  the active one) is explicitly deferred per the plan.~~ — **since built**,
+  via the same follow-on report's `/formats/[id]` detail page: a full
+  restriction-history list per format (all past MWL/ban-list snapshots, not
+  just the active one), with the currently-active entry bold + tagged
+  "active".
 - Item 10 remains unbuildable without a deeper per-printing sync — revisit
   only if that ever changes.
