@@ -48,8 +48,9 @@ export default async function AdvancedCardResultsPage({
   // Read-only summary of the active query. Required, not decorative: with
   // the filters living on another route this is the only thing on the page
   // that can explain its own result count. Built from the *parsed* params,
-  // so a `f:anarch` typed into the Card Name box shows up here as
-  // "Faction Anarch" - what actually filtered the results.
+  // so it reports exactly what filtered the results - including the fact
+  // that Card Name is now literal text: `?title=f:anarch` reads back as
+  // Name “f:anarch”, not as a Faction filter, because that is what it is.
   const summaryParts: string[] = [];
   if (params.title) summaryParts.push(`Name “${params.title}”`);
   if (params.text) summaryParts.push(`Text “${params.text}”`);

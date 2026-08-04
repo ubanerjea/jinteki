@@ -27,7 +27,6 @@ import { prisma } from "@/lib/prisma";
 
 import {
   buildFacetConditions,
-  extractOperators,
   likePattern,
   orderColumn,
   type CardSummary,
@@ -74,8 +73,24 @@ export interface ParsedAdvancedCardSearchParams extends AdvancedCardSearchParams
 
 // Parses a Next.js `searchParams` object into typed AdvancedCardSearchParams.
 // Kept separate from searchCardsAdvanced() so the parsing (multi-value facet
-// collection, prefix-token folding, precedence) is testable without a DB
+// collection, normalization, validation) is testable without a DB
 // connection, same split cards.ts uses.
+//
+// `title` and `text` are **pure literal strings** - whatever was typed,
+// unmodified. They used to run through extractOperators(), folding
+// f:/t:/s:/d: tokens into the facet params and stripping them from the
+// residual text, with a "Card Name's token beats Card Text's" tie-break.
+// That is gone: this page has explicit pickers for exactly those four
+// facets, which made the prefix syntax here redundant and confusing (two
+// competing ways to set Faction, one of them requiring you to already know
+// the code). The prefix syntax now lives in simple search only - the `q` box
+// on the home page, on /cards, and in the Simple search field at the top of
+// /cards/advanced - where it has type-ahead completion and no picker to
+// compete with. extractOperators() itself is unchanged and still used by
+// parseCardSearchParams(); only this parser stopped calling it.
+//
+// So the facet params below come from the pickers/dropdowns and nothing
+// else, and there is no precedence question left to arbitrate.
 export function parseAdvancedCardSearchParams(
   input: SearchParamsInput,
 ): ParsedAdvancedCardSearchParams {
@@ -84,39 +99,15 @@ export function parseAdvancedCardSearchParams(
   const order = firstParam(input, "order")?.trim();
   const format = firstParam(input, "format")?.trim();
 
-  // Explicit picker/dropdown values, read before any token folding - these
-  // always win (PHASE_6_PLAN.md item 6's precedence rule, unchanged).
+  // Picker/dropdown values - the only source of these four facets.
   const faction = allParams(input, "faction");
   const type = allParams(input, "type");
   const keyword = allParams(input, "keyword");
   const pack = allParams(input, "pack");
-  let side = firstParam(input, "side")?.trim() || undefined;
+  const side = firstParam(input, "side")?.trim() || undefined;
 
-  // Both text fields independently run through the same extractOperators()
-  // the `q` box uses, folding f:/t:/s:/d: tokens into the matching facet and
-  // stripping them from the residual text. `title` is folded first, so when
-  // both boxes carry a token for the same field title's wins - arbitrary but
-  // deterministic, and documented on /cards/syntax.
-  function fold(raw: string | undefined): string | undefined {
-    if (!raw) return undefined;
-    const { residual, derived } = extractOperators(raw, {
-      // extractOperators treats a non-empty value as "already explicitly
-      // set, don't override" - a non-empty array is exactly that.
-      faction: faction[0],
-      type: type[0],
-      keyword: keyword[0],
-      side,
-    });
-    if (derived.faction) faction.push(derived.faction);
-    if (derived.type) type.push(derived.type);
-    if (derived.keyword) keyword.push(derived.keyword);
-    if (derived.side) side = derived.side;
-    const trimmed = residual.trim();
-    return trimmed ? trimmed : undefined;
-  }
-
-  const title = fold(titleRaw);
-  const text = fold(textRaw);
+  const title = titleRaw ? titleRaw : undefined;
+  const text = textRaw ? textRaw : undefined;
 
   return {
     title,

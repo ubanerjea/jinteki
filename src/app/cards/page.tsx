@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CardResultsList, parseView } from "@/components/card-results";
 import { PaginationNav } from "@/components/pagination-nav";
 import { ResultsControls } from "@/components/results-controls";
+import { SimpleSearchBox } from "@/components/simple-search-box";
 import { parseCardSearchParams, searchCards } from "@/lib/search/cards";
 import {
   clearFacetsHref,
@@ -11,7 +12,8 @@ import {
   FACET_PARAMS,
   formatFacetSummary,
 } from "@/lib/search/filter-summary";
-import { allParams, type SearchParamsInput } from "@/lib/search/types";
+import { getPrefixOptions } from "@/lib/search/prefix-options";
+import { allParams, firstParam, type SearchParamsInput } from "@/lib/search/types";
 
 export const dynamic = "force-dynamic";
 
@@ -41,19 +43,25 @@ export default async function CardsPage({
   const params = parseCardSearchParams(rawParams);
   const view = parseView(rawParams);
 
-  const { items, total, page, pageSize, totalPages } = await searchCards(params);
+  // The search itself, plus the option lists the box's prefix type-ahead
+  // completes from (f:/t:/s:/d: values are exact codes, so the box offers
+  // them rather than expecting them to be known). Option data only - it does
+  // not touch what gets searched.
+  const [{ items, total, page, pageSize, totalPages }, prefixOptions] =
+    await Promise.all([searchCards(params), getPrefixOptions()]);
 
-  // Read-only "filtered by" note. Built from the *parsed* params, so an
-  // `f:anarch` token typed into the box is reported as the faction filter it
-  // actually became. Costs no query - it reads values already in hand.
-  const activeFacets = describeFacets({
-    faction: params.faction,
-    side: params.side,
-    type: params.type,
-    keyword: params.keyword,
-    pack: params.pack,
-    format: params.format,
-  });
+  // Read-only "filtered by" note - for a facet set from an actual URL param
+  // (a bookmarked or followed link), which this page has no widget to change.
+  // Built from `rawParams`, not the *parsed* `params`: a facet folded in from
+  // an `f:`/`t:`/`s:`/`d:` token in `q` is a different case entirely - the
+  // box below now shows the raw query verbatim (see `defaultValue`), so that
+  // filter is already visible and editable right there, not hidden. Earlier
+  // this read from `params.*` and so described token-derived facets too,
+  // which (a) mislabeled them as "set from the link you followed" when
+  // nothing was followed, and (b) had nothing backing it in `carriedParams`
+  // below (which has always read `rawParams`), so resubmitting the form
+  // silently dropped the filter the banner claimed was active.
+  const activeFacets = describeFacets(rawParams);
 
   // Presentation and inbound-filter state ride along in hidden inputs, so
   // re-searching doesn't silently reset the view/sort/page size or drop a
@@ -89,13 +97,23 @@ export default async function CardsPage({
 
       <form method="get" className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="text"
+          <SimpleSearchBox
             name="q"
-            defaultValue={params.q ?? ""}
+            // Raw, not `params.q`: `params.q` is the *residual* left after
+            // folding any f:/t:/s:/d: token into a facet, so a search for
+            // "f:anarch virus" rendered the box back showing only "virus" -
+            // the token vanished from view, and with it any way to tell the
+            // filter was still active without reading the (now-fixed)
+            // "filtered by" note above. Showing what was actually typed
+            // keeps the token visible in the one place it's meant to live,
+            // and makes resubmitting idempotent: the same text re-parses to
+            // the same facet + residual every time, no hidden state needed.
+            defaultValue={firstParam(rawParams, "q") ?? ""}
             placeholder="e.g. Sure Gamble"
-            aria-label="Search cards"
-            className="min-w-0 flex-1 rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            ariaLabel="Search cards"
+            options={prefixOptions}
+            containerClassName="min-w-0 flex-1"
+            className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
           <button
             type="submit"

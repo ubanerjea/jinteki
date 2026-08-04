@@ -60,123 +60,74 @@ describe("parseAdvancedCardSearchParams", () => {
     });
   });
 
-  describe("prefix tokens", () => {
-    it("recognizes each prefix in `title` alone", () => {
-      expect(parseAdvancedCardSearchParams({ title: "f:anarch" }).faction).toEqual([
-        "anarch",
-      ]);
-      expect(parseAdvancedCardSearchParams({ title: "t:ice" }).type).toEqual([
-        "ice",
-      ]);
-      expect(parseAdvancedCardSearchParams({ title: "s:virus" }).keyword).toEqual([
-        "virus",
-      ]);
-      expect(parseAdvancedCardSearchParams({ title: "d:runner" }).side).toBe(
-        "runner",
-      );
+  // `title` and `text` used to run through extractOperators(), folding
+  // f:/t:/s:/d: tokens into the facet params (with a "Card Name's token beats
+  // Card Text's" tie-break) and stripping them from the residual text. That
+  // was removed deliberately: this page has explicit pickers for exactly
+  // those four facets, so the prefix syntax here was a redundant second way
+  // to set them that also demanded the exact underlying code. The syntax now
+  // lives in simple search only, where parseCardSearchParams() still calls
+  // extractOperators() unchanged.
+  describe("title and text are literal, with no prefix parsing", () => {
+    it("keeps a bare prefix token as the text to search for", () => {
+      const result = parseAdvancedCardSearchParams({ title: "f:anarch" });
+      expect(result.title).toBe("f:anarch");
+      expect(result.faction).toEqual([]);
     });
 
-    it("recognizes each prefix in `text` alone", () => {
-      expect(parseAdvancedCardSearchParams({ text: "f:anarch" }).faction).toEqual([
-        "anarch",
-      ]);
-      expect(parseAdvancedCardSearchParams({ text: "t:ice" }).type).toEqual([
-        "ice",
-      ]);
-      expect(parseAdvancedCardSearchParams({ text: "s:virus" }).keyword).toEqual([
-        "virus",
-      ]);
-      expect(parseAdvancedCardSearchParams({ text: "d:runner" }).side).toBe(
-        "runner",
-      );
+    it("does the same for every one of the four prefixes, in either box", () => {
+      for (const token of ["f:anarch", "t:ice", "s:virus", "d:runner"]) {
+        const fromTitle = parseAdvancedCardSearchParams({ title: token });
+        expect(fromTitle.title).toBe(token);
+        expect(fromTitle.faction).toEqual([]);
+        expect(fromTitle.type).toEqual([]);
+        expect(fromTitle.keyword).toEqual([]);
+        expect(fromTitle.side).toBeUndefined();
+
+        const fromText = parseAdvancedCardSearchParams({ text: token });
+        expect(fromText.text).toBe(token);
+        expect(fromText.faction).toEqual([]);
+        expect(fromText.type).toEqual([]);
+        expect(fromText.keyword).toEqual([]);
+        expect(fromText.side).toBeUndefined();
+      }
     });
 
-    it("folds tokens from both boxes when they target different fields", () => {
+    it("leaves a token mixed with ordinary words exactly as typed", () => {
       const result = parseAdvancedCardSearchParams({
         title: "f:anarch rootkit",
         text: "s:virus trash",
       });
-      expect(result.faction).toEqual(["anarch"]);
-      expect(result.keyword).toEqual(["virus"]);
-      expect(result.title).toBe("rootkit");
-      expect(result.text).toBe("trash");
+      expect(result.title).toBe("f:anarch rootkit");
+      expect(result.text).toBe("s:virus trash");
+      expect(result.faction).toEqual([]);
+      expect(result.keyword).toEqual([]);
     });
 
-    it("is case-insensitive on the prefix letter", () => {
-      expect(parseAdvancedCardSearchParams({ title: "F:anarch" }).faction).toEqual(
-        ["anarch"],
-      );
-      expect(parseAdvancedCardSearchParams({ text: "S:virus" }).keyword).toEqual([
-        "virus",
-      ]);
+    it("is not case-sensitive about it either way - nothing is parsed", () => {
+      const result = parseAdvancedCardSearchParams({ title: "F:anarch" });
+      expect(result.title).toBe("F:anarch");
+      expect(result.faction).toEqual([]);
     });
 
-    it("strips the token from the residual text, leaving the rest", () => {
-      const result = parseAdvancedCardSearchParams({
-        title: "f:anarch s:virus rootkit",
-      });
-      expect(result.title).toBe("rootkit");
-    });
-
-    it("leaves an unrecognized prefix as literal text", () => {
+    it("leaves an unrecognized prefix as literal text too", () => {
       const result = parseAdvancedCardSearchParams({ title: "x:foo bar" });
       expect(result.faction).toEqual([]);
       expect(result.title).toBe("x:foo bar");
     });
 
-    it("returns undefined text when a box held nothing but tokens", () => {
-      const result = parseAdvancedCardSearchParams({ title: "f:anarch" });
-      expect(result.title).toBeUndefined();
-    });
-  });
-
-  describe("precedence", () => {
-    it("an explicit picker value beats a same-field token in `title`", () => {
+    it("takes the facets from the pickers only, alongside literal text", () => {
       const result = parseAdvancedCardSearchParams({
         title: "f:anarch",
         faction: "nbn",
-      });
-      expect(result.faction).toEqual(["nbn"]);
-      // The token is still consumed, not left behind as literal text.
-      expect(result.title).toBeUndefined();
-    });
-
-    it("an explicit picker value beats a same-field token in `text`", () => {
-      const result = parseAdvancedCardSearchParams({
-        text: "f:anarch",
-        faction: "nbn",
-      });
-      expect(result.faction).toEqual(["nbn"]);
-      expect(result.text).toBeUndefined();
-    });
-
-    it("an explicit multi-value picker beats a token too", () => {
-      const result = parseAdvancedCardSearchParams({
-        title: "t:ice",
         type: ["event", "program"],
-      });
-      expect(result.type).toEqual(["event", "program"]);
-    });
-
-    it("`title`'s token wins when both boxes carry one for the same field", () => {
-      const result = parseAdvancedCardSearchParams({
-        title: "f:anarch",
-        text: "f:nbn",
-      });
-      expect(result.faction).toEqual(["anarch"]);
-      // Both tokens are consumed as operators either way.
-      expect(result.title).toBeUndefined();
-      expect(result.text).toBeUndefined();
-    });
-
-    it("an explicit value for one field doesn't block a token for another", () => {
-      const result = parseAdvancedCardSearchParams({
-        title: "f:anarch s:virus",
         side: "runner",
       });
-      expect(result.faction).toEqual(["anarch"]);
-      expect(result.keyword).toEqual(["virus"]);
+      expect(result.faction).toEqual(["nbn"]);
+      expect(result.type).toEqual(["event", "program"]);
       expect(result.side).toBe("runner");
+      // No arbitration needed: the text is just text.
+      expect(result.title).toBe("f:anarch");
     });
   });
 
@@ -493,6 +444,19 @@ describe("searchCardsAdvanced (real DB)", () => {
         defaultResult.items.map((c) => c.code),
       );
     }
+  });
+
+  // The user-visible half of the parser change above: a prefix token in Card
+  // Name is now searched for as characters. Cross-checked in psql:
+  // `title ILIKE '%f:anarch%'` -> 0 rows, while `factionCode = 'anarch'` is
+  // 253 - so a folded-token implementation could not return 0 here.
+  it("a prefix token in `title` is searched literally, not folded", async () => {
+    const parsed = parseAdvancedCardSearchParams({ title: "f:anarch" });
+    const result = await searchCardsAdvanced(parsed);
+    expect(result.total).toBe(0);
+
+    const anarch = await prisma.card.count({ where: { factionCode: "anarch" } });
+    expect(anarch).toBe(253);
   });
 
   it("no criteria at all lists every card", async () => {

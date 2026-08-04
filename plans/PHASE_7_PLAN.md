@@ -15,6 +15,10 @@ and any deliberate divergence must be stated in the task report with its reason.
 Nothing here changes the schema, syncs data, or adds an auth-gated route. One new client component
 is introduced (see item 3), which is the only architecturally novel thing in the phase.
 
+**Addendum, built in a follow-up cycle after the eleven items below shipped**: a second client
+component and a scope change to the prefix syntax. See "Addendum" at the end of this doc — the
+"one new client component" line above describes only the original eleven items.
+
 ## Baseline
 
 `plans/SEARCH_MATCHING.md` settled how `q` matches (`word_similarity`/`<%` OR'd with `ILIKE`).
@@ -285,7 +289,169 @@ be stated as such rather than silently skipped. Phase-specific:
 ## Explicitly deferred
 
 - Quoting, negation, OR, regex, and NRDB's other prefixes — named as non-goals on `/cards/syntax`.
-- Client-side autocomplete on either simple search box; both stay plain GET forms.
+- ~~Client-side autocomplete on either simple search box; both stay plain GET forms.~~ **Reversed
+  in the Addendum below.**
 - Extending advanced search or the "filtered by" note to `/decklists` or `/rules`.
 - Saved searches, search history, sharing beyond the plain URL.
 - Any deployment/hosting work — still out of scope per `PROJECT_PLAN.md`.
+
+---
+
+## Addendum: prefix type-ahead + Advanced Search text-field simplification
+
+Built after the eleven items above, in a second build→verify→fix→verify cycle, in response to a
+real usability gap the prefix syntax had: values must be the exact underlying code
+(`f:haas_bioroid`, not "Haas-Bioroid" or "haas bioroid"), case-sensitive, no partial match, no
+spaces, no quoting — first documented as prose on `/cards/syntax` (a separate task before this
+addendum), then actually fixed here rather than left as something to memorise. **This explicitly
+reverses this plan's own "Explicitly deferred" item** ruling out client-side autocomplete on the
+simple search boxes — worth stating plainly since a reader who only sees that line would otherwise
+trust it as still current.
+
+### 12. Type-ahead for the prefix syntax
+
+`src/components/simple-search-box.tsx` (new, `"use client"`) — a client component for the one
+freeform `q` box (home page, `/cards`, and item 14's new field), distinct from `facet-picker.tsx`'s
+discrete multi-value chip UI: this box holds one arbitrary string that may contain zero or more
+`prefix:value` tokens mixed with ordinary words, not an array of chosen values.
+
+- **Trigger**: on `onChange`/`onSelect`, scan backward/forward from the caret to the nearest
+  whitespace to find the current token. If it matches `/^(f|t|s|d):(\S*)$/i` (looser than
+  `OPERATOR_TOKEN` — a bare `f:` with nothing after the colon still opens the dropdown), open it;
+  otherwise close it.
+- **Filtering**: match the prefix's option list (`src/lib/search/prefix-options.ts`, new -
+  `getPrefixOptions()`, sharing the faction/type/keyword queries `/cards/advanced` already ran,
+  plus a static two-item side list) by label or code containing the typed text, case-insensitive.
+  Up to 8 shown, highlighted the same way `facet-picker.tsx`'s `HighlightedLabel` does — that
+  function and `useHasMounted` were promoted from module-private to exported so both components
+  share them rather than duplicate them.
+- **Accepting a suggestion — splice by offset, not split/join**: only the text after the colon is
+  replaced with the option's code plus a trailing space; the prefix letter and its case are left
+  exactly as typed (`F:ana` → `F:anarch `, not rewritten to lowercase); everything before and after
+  the token is untouched. Completing a token that isn't at the end of the string can leave a double
+  space where the replacement meets existing text — confirmed harmless: `q.split(/\s+/)` in
+  `extractOperators()`/`parseCardSearchParams()` already collapses runs of whitespace.
+- **No-JS fallback is trivial here**, unlike the facet picker: pre-mount, this is just an ordinary
+  `<input type="text" name="q">` — that already is what a non-JS user needs, since the box was
+  always plain text. No separate fallback markup, no hydration-mismatch handling beyond the same
+  `useHasMounted()` pattern `facet-picker.tsx` already used.
+- Keyboard: same shape as `facet-picker.tsx` — arrows move the highlight (wrapping), Enter accepts
+  and `preventDefault`s so it doesn't submit the form while the dropdown is open, Escape closes,
+  click-outside closes. The keyboard handler only intercepts Enter while a token with at least one
+  match is open, so Enter submits normally the rest of the time.
+- **Known, accepted limitation**: clicking back into an already-completed token reopens the
+  dropdown with the existing value as the sole match, so the next Enter re-completes to the same
+  string instead of submitting — one keypress swallowed, no data loss, no wrong result. Left as-is
+  rather than adding complexity to distinguish "reopened on an unchanged value" from a genuine edit.
+- Not in scope: suggesting the four prefix letters themselves (only triggers once a full `letter:`
+  is typed), fuzzy/typo-tolerant matching of option values, pixel-precise caret positioning.
+
+### 13. Prefix syntax removed from Advanced Search's Card Name / Card Text fields
+
+`src/lib/search/cards-advanced.ts`: `parseAdvancedCardSearchParams()` no longer runs `title`/`text`
+through `extractOperators()`. Both become pure literal strings — whatever was typed, unmodified.
+This removes the whole "which box's token wins" precedence question the original item 4 specified,
+since there's nothing left to arbitrate: the facet params (`faction`/`type`/`keyword`/`side`) on
+that page come **only** from the pickers now, never from parsing the text fields. Deliberate
+simplification, not a bug fix for anything wrong with the folding logic itself — the pickers
+already covered these exact four facets, which made a second, code-memorising way to set them
+redundant and, per the usability gap above, actively confusing.
+
+`/cards/advanced/page.tsx`'s Card Name hint drops the "prefixes work here too" sentence and its
+`/cards/syntax` link — reduced to "Matches the card's title only." The link now lives on item 14's
+field instead, since that's where the syntax applies.
+
+`extractOperators()` itself is untouched and still exported from `cards.ts` — `/cards`'
+`parseCardSearchParams()` uses it exactly as item 1 originally specified. This change is scoped to
+the advanced parser only.
+
+### 14. A "Simple search" field at the top of `/cards/advanced`
+
+Labeled exactly **"Simple search"**, above Card Name, its own `<form method="get" action="/cards">`
+(separate from the criteria form below it, which still posts to `/cards/advanced/results`)
+containing a `SimpleSearchBox` and a submit button — not a new query path, the same
+`parseCardSearchParams()`/`searchCards()` engine `/cards` itself uses. Visually set apart with a
+border/divider from the criteria rows.
+
+This does not violate item 5's "renders no results" requirement — that requirement is about the
+criteria form; this new field is a second, separate form that navigates away to `/cards` on submit,
+same destination as the page header's existing "Simple search" link, just with a working box
+attached now instead of only a link.
+
+`getPrefixOptions()` is called by all three pages that render a `SimpleSearchBox` (home, `/cards`,
+`/cards/advanced`) rather than each re-deriving its own faction/type/keyword/side lists —
+`/cards/advanced/page.tsx`'s three inline queries (faction `findMany`, type `groupBy`, keyword
+`unnest`) were replaced by this call; its Pack/Format queries, which have no prefix letter, stay
+local. Home and `/cards` previously fetched none of these — each gained one small `Promise.all` leg.
+
+### 15. `/cards/syntax` updated for the new scope
+
+Prefixes now work in **simple search only** — the home page's box, `/cards`, and item 14's field —
+and no longer apply to Advanced Search's Card Name/Card Text, which are pure literal matches with
+no prefix parsing. The "Card Name's wins" precedence bullet from the original item 7 is gone, since
+there's no longer a second field to arbitrate against; the precedence section instead keeps the
+still-true rule that a filter already in the URL beats a prefix token
+(`/cards?faction=nbn&q=f:anarch` → 241, every NBN card — re-verified). The type-ahead is mentioned
+as the reason the earlier value-format guidance (exact code, case-sensitive, no spaces, no quoting)
+matters less in practice now, though it's kept — a user can still type a value by hand and hit the
+same footguns if they ignore the suggestions.
+
+### Fix applied after verification: the "filtered by" note and the box could disagree with each other
+
+Found during the surgical verify pass on this addendum, not part of the original build: `/cards`'
+read-only "filtered by" note (item 8) was built from `params.*` — the *parsed*, post-token-fold
+values — so a facet derived from typing e.g. `f:anarch` into the box was reported in the banner
+("Filtered by Faction: Anarch — set from the link you followed, and not editable here") while the
+box itself showed only the token-stripped residual (`virus`) and no hidden input carried the
+derived facet forward. Pressing Search again silently dropped the filter (`q=f:anarch+virus` → 47
+cards; resubmit → `q=virus` → 78). This gap predates this addendum (item 8's original design), but
+this addendum's whole point is to get people typing prefix tokens into that exact box, converting a
+rare edge case into the mainline path — so it was fixed here rather than left for later.
+
+Fix, in `src/app/cards/page.tsx`:
+- The `q` box's `defaultValue` now shows the **raw**, unparsed `q` (`firstParam(rawParams, "q")`)
+  instead of `params.q` (the residual). The token stays visible exactly where it was typed, and
+  resubmitting is now idempotent — the same text re-parses to the same facet + residual every time,
+  with no hidden-input bookkeeping needed for it.
+- The "filtered by" note now reads `describeFacets(rawParams)` instead of reconstructing from
+  `params.*` — so it only ever describes a facet that is genuinely present as a URL param (a
+  bookmarked or followed link, the case it was built for), never one derived from a `q` token
+  (which is now visible in the box itself, per the point above, and doesn't need a separate note).
+
+Both behaviors were re-verified end to end after the fix, in dev and a separate production build:
+`/cards?q=f:anarch+virus` renders the box as `value="f:anarch virus"`, no banner, 47 results;
+resubmitting still returns 47 (not 78). `/cards?faction=anarch` (a genuine URL-param case) is
+unaffected — banner still present, hidden `faction` input still carried, 253 results.
+
+### Testing added
+
+- `src/lib/search/cards-advanced.test.ts`: the operator-folding-in-title/text tests from the
+  original item 4 spec are removed (they tested behavior item 13 deliberately deleted); a new test
+  pins the replacement behavior — `parseAdvancedCardSearchParams({ title: "f:anarch" })` yields a
+  literal `title: "f:anarch"` with `faction` left empty.
+- `src/components/simple-search-box.test.ts` (new): pre-mount/no-JS render tests (a real
+  `<input type="text" name="q">` with the right `defaultValue`, matching `facet-picker.test.ts`'s
+  precedent), plus unit tests on the extracted pure `findPrefixToken`/`spliceCompletion` logic
+  directly — the one part of this component that doesn't require a browser to verify, since this
+  repo has no jsdom/testing-library. The hydrated dropdown/keyboard behavior remains an accepted,
+  documented gap, same as `facet-picker.tsx`'s chip UI.
+- Suite: 228 → 241 tests.
+
+### Verification added
+
+Same standards as the rest of this plan — typecheck/lint/tests, dev + separate production
+build/start + curl, `psql` cross-checks. Specific to this addendum:
+
+- `/cards/advanced/results?title=f:anarch` → 0 (literal, not folded — `title ILIKE '%f:anarch%'` =
+  0 in psql, vs. `factionCode='anarch'` = 253); `/cards/advanced/results?text=s:virus` → 0
+  (literal), vs. `?keyword=virus` → 41.
+- `/cards/advanced` renders exactly two disjoint `<form>`s, `action="/cards"` and
+  `action="/cards/advanced/results"`, with zero param leakage between them, and the criteria form's
+  "no results" invariant still holds.
+- Every `SimpleSearchBox` site pre-mount-renders a bare `<input type="text" name="q">`.
+- The double-space artifact traced through the real parsers (`extractOperators`,
+  `parseCardSearchParams`) and confirmed inert.
+- The "filtered by"/box-value fix re-verified end to end in both dev and production, as described
+  above.
+- Injection safety re-confirmed on the (unchanged) SQL paths these fields still go through: `?q=%`,
+  `?title='; DROP TABLE "Card"; --'`, `?q=a%00b` all return 200 with `Card` still at 2054 rows.

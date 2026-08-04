@@ -48,14 +48,18 @@ const NEVER_CHANGES = () => () => {};
 const CLIENT_SNAPSHOT = () => true;
 const SERVER_SNAPSHOT = () => false;
 
-function useHasMounted(): boolean {
+// Exported for src/components/simple-search-box.tsx, which needs the same
+// "render the plain no-JS element until hydration finishes" swap.
+export function useHasMounted(): boolean {
   return useSyncExternalStore(NEVER_CHANGES, CLIENT_SNAPSHOT, SERVER_SNAPSHOT);
 }
 
 // Highlights the typed substring inside an option's label, so it's visible
 // why each remaining option is listed. Case-insensitive, first occurrence
 // only (labels here are short - faction/type/subtype/pack names).
-function HighlightedLabel({ label, query }: { label: string; query: string }) {
+// Exported for simple-search-box.tsx's dropdown, which highlights the same
+// way against the same option labels.
+export function HighlightedLabel({ label, query }: { label: string; query: string }) {
   const q = query.trim();
   if (!q) return <>{label}</>;
   const index = label.toLowerCase().indexOf(q.toLowerCase());

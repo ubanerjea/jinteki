@@ -1,6 +1,8 @@
 import Link from "next/link";
 
+import { SimpleSearchBox } from "@/components/simple-search-box";
 import { prisma } from "@/lib/prisma";
+import { getPrefixOptions } from "@/lib/search/prefix-options";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +19,13 @@ export default async function Home() {
   // Formats section (format-descriptions-links-and-search-plan.md §4b):
   // Format is a tiny table (6 rows) - always fetched in full, same treatment
   // /cards/[code]/page.tsx already gives it.
-  const formats = await prisma.format.findMany({ orderBy: { name: "asc" } });
+  // getPrefixOptions() feeds the search box's f:/t:/s:/d: type-ahead only -
+  // the same lists /cards and /cards/advanced use. It changes nothing about
+  // what the form submits or how /cards answers it.
+  const [formats, prefixOptions] = await Promise.all([
+    prisma.format.findMany({ orderBy: { name: "asc" } }),
+    getPrefixOptions(),
+  ]);
 
   return (
     <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-black">
@@ -40,12 +48,13 @@ export default async function Home() {
             action="/cards"
             className="flex h-12 w-full max-w-[470px] items-center gap-2 rounded-full border border-solid border-black/[.08] bg-white pl-5 pr-1.5 dark:border-white/[.145] dark:bg-zinc-900"
           >
-            <input
-              type="text"
+            <SimpleSearchBox
               name="q"
-              aria-label="Search cards"
+              ariaLabel="Search cards"
               placeholder="Search cards"
-              className="min-w-0 flex-1 bg-transparent text-base outline-none"
+              options={prefixOptions}
+              containerClassName="min-w-0 flex-1"
+              className="w-full bg-transparent text-base outline-none"
             />
             <button
               type="submit"

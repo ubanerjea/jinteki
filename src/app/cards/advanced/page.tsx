@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { Prisma } from "@prisma/client";
 
 import { FacetPicker, type FacetOption } from "@/components/facet-picker";
 import { ORDER_OPTIONS, PAGE_SIZE_OPTIONS } from "@/components/results-controls";
-import { formatCode } from "@/lib/format";
+import { SimpleSearchBox } from "@/components/simple-search-box";
 import { prisma } from "@/lib/prisma";
 import { parseAdvancedCardSearchParams } from "@/lib/search/cards-advanced";
+import { getPrefixOptions } from "@/lib/search/prefix-options";
 import type { SearchParamsInput } from "@/lib/search/types";
 
 export const dynamic = "force-dynamic";
@@ -62,36 +62,22 @@ export default async function AdvancedCardSearchPage({
   searchParams: Promise<SearchParamsInput>;
 }) {
   const rawParams = await searchParams;
-  // Reuses the results page's parser so a value typed as `f:anarch` in the
-  // Card Name box comes back pre-folded into the Faction picker on "Edit
-  // search", exactly as the results it produced were filtered.
+  // Reuses the results page's parser so every field comes back exactly as the
+  // results it produced were filtered, on "Edit search".
   const params = parseAdvancedCardSearchParams(rawParams);
 
-  // Picker option data, fetched in the existing Promise.all style. These are
-  // the four queries that used to populate /cards' dropdowns - moved here,
-  // not duplicated (PHASE_7_PLAN.md item 8).
-  const [factions, typeRows, keywordRows, packs, formats] = await Promise.all([
-    prisma.faction.findMany({ orderBy: { code: "asc" }, select: { code: true } }),
-    prisma.card.groupBy({ by: ["typeCode"], orderBy: { typeCode: "asc" } }),
-    prisma.$queryRaw<{ keyword: string }[]>(
-      Prisma.sql`SELECT DISTINCT unnest(keywords) AS keyword FROM "Card" ORDER BY 1`,
-    ),
+  // Picker option data, fetched in the existing Promise.all style.
+  // Faction / Type / Subtype / Side come from the shared getPrefixOptions(),
+  // which the home page and /cards also call for the Simple search box's
+  // type-ahead - one definition of each list rather than three copies of the
+  // same three queries. Pack and Format are only needed here, so they stay
+  // here.
+  const [prefixOptions, packs, formats] = await Promise.all([
+    getPrefixOptions(),
     prisma.pack.findMany({ orderBy: { name: "asc" } }),
     prisma.format.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  const typeOptions: FacetOption[] = typeRows.map((t) => ({
-    value: t.typeCode,
-    label: formatCode(t.typeCode),
-  }));
-  const factionOptions: FacetOption[] = factions.map((f) => ({
-    value: f.code,
-    label: formatCode(f.code),
-  }));
-  const keywordOptions: FacetOption[] = keywordRows.map((k) => ({
-    value: k.keyword,
-    label: formatCode(k.keyword),
-  }));
   const packOptions: FacetOption[] = packs.map((p) => ({
     value: p.code,
     label: p.name,
@@ -111,20 +97,62 @@ export default async function AdvancedCardSearchPage({
         </div>
       </div>
 
+      {/* A separate form from the criteria form below, posting to /cards -
+          this is simple search, embedded for convenience, not another way to
+          drive the advanced query. Same engine as /cards (one box matching
+          title or text, always fuzzy), so it is the one place on this page
+          where the f:/t:/s:/d: prefix syntax applies. The criteria form's
+          Card Name / Card Text fields are pure literal text; they have real
+          pickers for those four facets a few rows down.
+
+          It does not breach "this page renders no results": submitting
+          navigates to /cards, exactly as the Simple search link in the header
+          above already does - now with a working box attached to it. */}
+      <div className="flex flex-col gap-1 rounded border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+        <form method="get" action="/cards" className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
+            <label
+              htmlFor="adv-simple-q"
+              className="shrink-0 text-sm font-medium sm:w-[132px] sm:text-right"
+            >
+              Simple search
+            </label>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <SimpleSearchBox
+                name="q"
+                ariaLabel="Simple search"
+                placeholder="e.g. Sure Gamble"
+                options={prefixOptions}
+                containerClassName="min-w-0 flex-1"
+                className={INPUT_CLASS}
+                inputId="adv-simple-q"
+              />
+              <button
+                type="submit"
+                className="rounded bg-foreground px-4 py-1.5 text-sm font-medium text-background"
+              >
+                Search
+              </button>
+            </div>
+          </div>
+        </form>
+        <p className="text-xs text-zinc-500 sm:pl-[148px] dark:text-zinc-400">
+          One box, matching card names and rules text together, always
+          forgiving of typos. Accepts <code>f:</code> <code>t:</code>{" "}
+          <code>s:</code> <code>d:</code> prefixes, e.g. <code>f:anarch</code>{" "}
+          or <code>s:virus</code>, and completes their values as you type —{" "}
+          <Link href="/cards/syntax" className="underline">
+            search syntax help
+          </Link>
+          .
+        </p>
+      </div>
+
       <form method="get" action="/cards/advanced/results" className="flex flex-col">
         <Row
           label="Card Name"
           htmlFor="adv-title"
-          hint={
-            <>
-              Matches the card&apos;s title only. Prefixes work here too, e.g.{" "}
-              <code>f:anarch</code> or <code>s:virus</code> —{" "}
-              <Link href="/cards/syntax" className="underline">
-                search syntax help
-              </Link>
-              .
-            </>
-          }
+          hint="Matches the card's title only."
         >
           <input
             id="adv-title"
@@ -181,7 +209,7 @@ export default async function AdvancedCardSearchPage({
           <FacetPicker
             name="type"
             label="Type"
-            options={typeOptions}
+            options={prefixOptions.type}
             selected={params.type}
             placeholder="Any type"
           />
@@ -191,7 +219,7 @@ export default async function AdvancedCardSearchPage({
           <FacetPicker
             name="faction"
             label="Faction"
-            options={factionOptions}
+            options={prefixOptions.faction}
             selected={params.faction}
             placeholder="Any faction"
           />
@@ -204,7 +232,7 @@ export default async function AdvancedCardSearchPage({
           <FacetPicker
             name="keyword"
             label="Subtype"
-            options={keywordOptions}
+            options={prefixOptions.keyword}
             selected={params.keyword}
             placeholder="Any subtype"
           />
@@ -228,8 +256,11 @@ export default async function AdvancedCardSearchPage({
             className={INPUT_CLASS}
           >
             <option value="">Any side</option>
-            <option value="corp">{formatCode("corp")}</option>
-            <option value="runner">{formatCode("runner")}</option>
+            {prefixOptions.side.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
           </select>
         </Row>
 

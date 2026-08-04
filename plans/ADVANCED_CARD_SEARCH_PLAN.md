@@ -13,6 +13,16 @@ becomes, and the two must be read together.
 on one line and results on the same page as the form. The decisions below reflect the mockup, which
 is the current source of truth for layout and interaction.
 
+**Revised again after launch**, in a follow-up cycle: the prefix syntax (`f:`/`t:`/`s:`/`d:`) was
+removed from Card Name and Card Text — this page already has explicit pickers for the exact same
+four facets, which made a second, code-memorising way to set them redundant and, per the usability
+gap that prompted the change, actively confusing (values must be an exact underlying code like
+`haas_bioroid`, case-sensitive, no partial match, no spaces — `f:haas bioroid` silently filters to a
+nonexistent faction "haas" plus a literal-text search for "bioroid", finding nothing). Prefix syntax
+now lives in Simple Search only, which gained type-ahead completion for it and a field embedded
+directly on this page. This doc describes the page as it now stands, not as a historical record —
+see "Prefix tokens", "Form layout", and "Client components" below.
+
 Hard requirement, non-negotiable: **advanced search must not run `word_similarity`/`<%` unless the
 user explicitly opts in.** `plans/SEARCH_MATCHING.md` OR's `<%` into every `q` match today to fix a
 dilution bug for *casual* search — but that same fuzziness is what a precise search should be able
@@ -56,19 +66,30 @@ and `text` are also ANDed with each other and with the facets — this is the de
 `/cards`' single box, which ORs title against text. Splitting the box into two fields only makes
 sense if each narrows; that is why Scryfall and NRDB both give Name and Text separate fields.
 
-**Prefix tokens inside `title`/`text`**: both fields independently run through the existing
-`extractOperators()` from `src/lib/search/cards.ts`, folding `f:`/`t:`/`s:`/`d:` tokens into the
-matching facet and stripping them from the residual text. Precedence is unchanged from
-`PHASE_6_PLAN.md` item 6: **an explicit picker/dropdown value always wins over a token.** A token
-only fills a facet left empty. When both boxes carry a token for the same field, `title`'s is
-folded first — arbitrary but deterministic, and documented on `/cards/syntax`.
+**`title`/`text` do not read prefix tokens.** `f:anarch` typed into either box is searched as
+literal text (`title ILIKE '%f:anarch%'`), not folded into the Faction facet. This page already has
+explicit pickers for `faction`/`type`/`keyword`/`side` (below); prefix parsing on top of those
+pickers was a second, error-prone way to set the same four facets — dropped rather than kept as a
+confusing duplicate. Prefix syntax survives only in Simple Search (the "Simple search" field below,
+plus `/cards` and the home page), which has no pickers of its own to duplicate and now offers
+type-ahead completion so the exact-code requirement isn't something you have to memorise.
 
 ## Form layout
 
-One criterion per row: label in a fixed left column, field plus its hint text on the right, rows
-separated by a hairline rule. Rows in order:
+**A "Simple search" field sits above everything else**, in its own `<form method="get"
+action="/cards">`, visually set apart (border/divider) from the criteria form below it — labeled
+exactly "Simple search", a `SimpleSearchBox` plus a submit button, functionally identical to
+`/cards`' own box (same engine, same title-or-text-together matching, same prefix support). It is
+not part of the criteria form and does not touch `/cards/advanced/results` — submitting it
+navigates to `/cards`, same destination as the page header's "Simple search" link, just with a
+working box attached rather than only a link. This does not violate "renders no results at all"
+below: that requirement is about the criteria form specifically.
 
-1. **Card Name** — text input. Hint names the prefix syntax and links to `/cards/syntax`.
+Below it, the criteria form: one criterion per row, label in a fixed left column, field plus its
+hint text on the right, rows separated by a hairline rule. Rows in order:
+
+1. **Card Name** — text input. Hint: "Matches the card's title only." No prefix syntax here — see
+   "Prefix tokens" above.
 2. **Card Text** — text input. Hint states that filling both boxes requires a card to match both.
 3. **Matching** — the fuzzy checkbox, unchecked. Hint: "Off by default — searches are plain
    substring matches unless you tick this." Also names simple search as the always-forgiving
@@ -82,22 +103,32 @@ separated by a hairline rule. Rows in order:
 10. *(Preferences subheading)* **Sort by** — plain `<select>`.
 11. **Cards per page** — plain `<select>`: 30 / 60 / 100.
 
-Then **Search** and a **Reset** link. Page header carries **Simple search** and **Home** links.
+Then **Search** and a **Reset** link. Page header carries **Simple search** and **Home** links —
+the header's "Simple search" is a plain link to `/cards`, distinct from the functioning field above
+the criteria form.
 
 Sort and page size appear here *and* on the results page. Scryfall does the same (research §2:
 "sort/display preference is set once, up front, alongside the filters"), and it means you can
 commit before searching or adjust after.
 
-## The facet picker
+## Client components
 
-`src/components/facet-picker.tsx` — the one genuinely new interaction. Click to open; pick from the
-list or type to narrow it; click again to add another. Selected values sit as removable chips inside
-the box. Four states, all mocked: empty, open-with-full-list, typing-with-matches-highlighted, and
-several-chosen.
+Two, both deliberate, contained exceptions to the note carried since Phase 4 that "URL searchParams
+are the entire source of truth — no client component, no local state." `simple-search-box.tsx` was
+added in the follow-up cycle that removed prefix parsing from Card Name/Card Text (above); both
+share small pieces (`useHasMounted`, `HighlightedLabel`, both promoted from module-private to
+exported in `facet-picker.tsx`) but are separate components, not variants of one, since the
+interaction models genuinely differ: a picker manages a discrete array of chosen values, the search
+box holds one arbitrary string that may contain zero or more `prefix:value` tokens mixed with
+ordinary words.
 
-**This is the first client component in the app**, and it cuts against the note carried since
-Phase 4 that "URL searchParams are the entire source of truth — no client component, no local
-state." The exception is deliberate and contained:
+### The facet picker
+
+`src/components/facet-picker.tsx`. Click to open; pick from the list or type to narrow it; click
+again to add another. Selected values sit as removable chips inside the box. Four states, all
+mocked: empty, open-with-full-list, typing-with-matches-highlighted, and several-chosen.
+
+The exception is deliberate and contained:
 
 - The picker's only output is a set of `<input type="hidden" name={name}>` elements inside the
   surrounding plain `<form method="get">`. The URL remains the source of truth; the picker just
@@ -114,6 +145,44 @@ state." The exception is deliberate and contained:
 Keyboard support is required, not optional: arrow keys move the highlight, Enter selects,
 Backspace on an empty input removes the last chip, Escape closes. Typed matches are highlighted
 inside the option labels so it's clear why each is listed.
+
+### The Simple Search box's type-ahead
+
+`src/components/simple-search-box.tsx`. Prefix-syntax completion for the one freeform `q` box —
+used on the home page, `/cards`, and the new "Simple search" field above. Not a fork of the facet
+picker: it operates on a substring of an arbitrary string via caret position, not on a discrete
+array.
+
+- **Trigger**: on every `onChange` and `onSelect` (typing, and the caret moving without the value
+  changing — arrow keys, a click), find the "current token" by scanning from the caret backward and
+  forward to the nearest whitespace or string boundary. If that token matches
+  `/^(f|t|s|d):(\S*)$/i` (looser than `OPERATOR_TOKEN` — a bare `f:` with nothing typed yet still
+  opens the dropdown), open it against that prefix's option list; otherwise close it.
+- **Filtering**: match `getPrefixOptions()`'s faction/type/keyword/side lists (`src/lib/search/
+  prefix-options.ts`, new — the same three queries `/cards/advanced` already ran, factored out so
+  home/`/cards`/`/cards/advanced` share one call instead of tripling them, plus a static two-item
+  side list) by label or code containing the typed text, case-insensitive, up to 8 shown,
+  highlighted the same way the facet picker's option labels are.
+- **Accepting a suggestion — splice by offset, not split/join.** Only the text after the colon is
+  replaced with the option's code plus a trailing space; the prefix letter and its exact case are
+  left untouched (`F:ana` → `F:anarch `, never rewritten to `f:`); everything before and after the
+  token survives unchanged. Caret moves to just past the inserted space. Completing a token that
+  isn't at the string's end can leave a double space where the replacement meets existing text —
+  confirmed harmless: `q.split(/\s+/)` in `extractOperators()`/`parseCardSearchParams()` already
+  collapses runs of whitespace, so the double space never reaches a facet or residual-text value.
+- **No-JS fallback is trivial here, unlike the picker.** Pre-mount, this is just an ordinary
+  `<input type="text" name="q">` — that already is what a non-JS user needs, since the box was
+  always plain text. No separate fallback markup.
+- Keyboard: same shape as the picker — arrows move the highlight (wrapping), Enter accepts and
+  `preventDefault`s so the form doesn't submit while a match is highlighted, Escape closes,
+  click-outside closes. The handler only intercepts Enter while a token with at least one match is
+  open, so Enter submits normally otherwise.
+- **Known, accepted limitation**: clicking back into an already-completed token reopens the
+  dropdown showing the existing value as the sole match, so the next Enter re-completes to the same
+  string instead of submitting — one keypress swallowed, no data loss, no wrong result. Left as-is;
+  distinguishing "reopened on an unchanged value" from a genuine edit isn't worth the complexity.
+- Not in scope: suggesting the four prefix letters themselves, fuzzy/typo-tolerant matching of
+  option values, pixel-precise caret positioning of the dropdown.
 
 ## Results page
 
@@ -199,10 +268,24 @@ Static, no DB query. Documents **only what is implemented**, and names what is n
 - **Fuzzy matching** — plain-language explanation with a real worked example: `efficency` finds
   nothing on its own but finds *Bioroid Efficiency Research* with fuzzy on (verified). Note that
   loosely-related cards may appear, ranked below solid matches.
-- **Prefixes** — table of `f:` faction, `t:` type, `s:` subtype, `d:` side, each with a real
-  example (`f:anarch`, `t:operation`, `s:virus`, `d:runner`). Confirm codes against the database at
-  build time rather than trusting this list.
-- **Precedence** — an explicit picker value beats a prefix token.
+- **Prefixes work in Simple Search only** — the home page's box, `/cards`, and the "Simple search"
+  field on this page. They do **not** apply to this page's Card Name/Card Text fields (see "Prefix
+  tokens" above) — say so explicitly, since anyone who read this page before the follow-up cycle
+  would otherwise assume the old behavior still holds. Table of `f:` faction, `t:` type, `s:`
+  subtype, `d:` side, each with a real example (`f:anarch`, `t:operation`, `s:virus`, `d:runner`).
+  Confirm codes against the database at build time rather than trusting this list. Mention that
+  Simple Search's box offers type-ahead completion for these values (above) — the exact-code
+  requirement below still applies if you type by hand and ignore the suggestions, but most users
+  won't need to know it exists.
+- **Value format, still true and still the reason type-ahead exists**: the value is the exact
+  underlying code, not the display name (lowercase, underscore instead of a space or hyphen —
+  `f:haas_bioroid`, not "Haas-Bioroid"); no spaces and no quoting (`f:haas bioroid` parses as two
+  words, filtering to a nonexistent faction "haas" and searching "bioroid" as literal text — not
+  what was intended); exact match, not substring (`f:anar` matches nothing); case-sensitive
+  (`f:ANARCH` matches nothing — only the prefix letter itself ignores case). Verify every example
+  against the database, not copied from this list.
+- **Precedence** — a filter already present as a URL param (e.g. from a bookmarked link) beats a
+  same-field prefix token in `q`; a repeated prefix for the same field keeps only the first.
 - **Not supported** — negation (`-f:anarch`), OR (`|`), quoted phrases, regex, and any other prefix
   including NRDB's `x:`/`a:`/`e:`. Unrecognised prefixes are treated as literal text.
 
@@ -218,10 +301,12 @@ the form names simple search as the always-forgiving option.
 
 - `cards.test.ts` — unchanged assertions. The `buildFacetConditions`/`extractOperators` extraction
   must not alter `searchCards()` behaviour; prove it by the suite passing untouched.
-- `cards-advanced.test.ts` (new):
-  - Parsing (no DB): each prefix recognised in `title` alone, in `text` alone, in both for
-    different fields; case-insensitivity; an explicit facet beating a same-field token in either
-    box; `fuzzy=1` vs. absent; repeated params collected into arrays via `allParams()`.
+- `cards-advanced.test.ts`:
+  - **`title`/`text` are pure literal strings, not folded**: `parseAdvancedCardSearchParams({
+    title: "f:anarch" })` yields `title: "f:anarch"` verbatim with `faction` left empty — this
+    pins the follow-up cycle's removal of prefix parsing from these two fields. (The original spec
+    for this test — a prefix recognised in title/text, precedence between the two boxes — described
+    behavior that no longer exists and was removed, not fixed, from this suite.)
   - Real DB: `title` with fuzzy off **excludes** a known fuzzy-only match (`efficency` → 0 rows),
     and with fuzzy on **includes** it (→ 3 rows) — the opt-out default must actually hold.
   - `title` + `text` both set returns the **intersection** of the two single-field result sets,
@@ -231,6 +316,11 @@ the form names simple search as the always-forgiving option.
   - Multi-value `keyword` uses overlap, not equality — a card with any one of two keywords matches.
 - `facet-picker` — a small render test that the pre-mount fallback is a real
   `<select multiple>` carrying the right options and selections.
+- `simple-search-box.test.ts` (new): pre-mount/no-JS render test — a real `<input type="text"
+  name="q">` with the right `defaultValue` — plus direct unit tests on the extracted pure
+  `findPrefixToken`/`spliceCompletion` logic (the one part of this component verifiable without a
+  browser; this repo has no jsdom/testing-library, so the hydrated dropdown/keyboard behavior stays
+  an accepted, documented gap, same as the facet picker's chip UI).
 
 ## Verification
 
@@ -240,10 +330,16 @@ auth-gated route. Additions:
 
 - **Real requests across several combinations**, each diffed against a direct `psql` count:
   `?title=efficency` (0) vs. `?title=efficency&fuzzy=1` (3);
-  `?faction=anarch&faction=criminal&type=event&type=program&keyword=virus` (34);
-  `?title=f:anarch+virus` (token applies) vs. `?title=f:anarch&faction=nbn` (explicit wins).
+  `?faction=anarch&faction=criminal&type=event&type=program&keyword=virus` (34).
+- **Prefix tokens in Card Name/Card Text are literal, not folded** — `?title=f:anarch` on
+  `/cards/advanced/results` is 0 (matches `title ILIKE '%f:anarch%'`, not `factionCode='anarch'`);
+  `?text=s:virus` is 0 (matches `text ILIKE '%s:virus%'`, not the Virus subtype, which is 41).
+- **The two forms on `/cards/advanced` are disjoint** — the new "Simple search" field's `<form>`
+  has `action="/cards"` and carries only a `q` input, zero hidden params from the criteria form; the
+  criteria form still has `action="/cards/advanced/results"`.
 - **The form renders no result rows** — assert the absence of the results list on `/cards/advanced`,
-  not just the presence of the form.
+  not just the presence of the form. This includes the new Simple Search field, which is a separate
+  form that navigates away on submit rather than rendering anything in place.
 - **Picker works without JavaScript** — fetch `/cards/advanced` and confirm the server-rendered
   HTML contains `<select multiple>` elements with the real option lists, since that is what a no-JS
   client receives.
@@ -259,3 +355,7 @@ auth-gated route. Additions:
 - Applying this pattern to `/decklists` or `/rules` — neither has the facet set to justify it,
   unchanged from `PHASE_6_PLAN.md`'s deferral.
 - Saved searches, search history, or sharing beyond the plain URL.
+- Suggesting the four prefix letters themselves in the type-ahead (it only triggers once a full
+  `letter:` is typed), fuzzy/typo-tolerant matching of option values in the dropdown, and
+  pixel-precise caret positioning of the dropdown — all named directly in "The Simple Search box's
+  type-ahead" above, not left implicit.
