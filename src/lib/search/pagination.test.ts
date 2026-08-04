@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
   pageOffset,
   parsePage,
   parsePageSize,
@@ -59,6 +60,39 @@ describe("parsePageSize", () => {
 
   it("falls back to default for non-numeric garbage", () => {
     expect(parsePageSize("abc")).toBe(DEFAULT_PAGE_SIZE);
+  });
+
+  // The optional allowed-set, used by the card parsers only: the card pages
+  // render a fixed 30/60/100 control, so a value outside it (`?pageSize=45`)
+  // must not be honoured behind a control that cannot display it.
+  describe("with an allowed set", () => {
+    it("accepts a value in the set", () => {
+      expect(parsePageSize("60", DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS)).toBe(60);
+      expect(parsePageSize("100", DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS)).toBe(
+        100,
+      );
+    });
+
+    it("falls back for a value outside the set", () => {
+      expect(parsePageSize("45", DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS)).toBe(
+        DEFAULT_PAGE_SIZE,
+      );
+      expect(parsePageSize("1", DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS)).toBe(
+        DEFAULT_PAGE_SIZE,
+      );
+    });
+
+    it("still clamps first, so a huge value lands on MAX_PAGE_SIZE", () => {
+      // 999999 clamps to 100, which *is* in the set - so it is honoured,
+      // exactly as the "100" link on the control would be.
+      expect(parsePageSize("999999", DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS)).toBe(
+        MAX_PAGE_SIZE,
+      );
+    });
+
+    it("leaves the no-set behaviour (decklists, rules) alone", () => {
+      expect(parsePageSize("45")).toBe(45);
+    });
   });
 });
 

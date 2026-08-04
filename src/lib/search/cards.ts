@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 
 import {
   DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
   pageOffset,
   parsePage,
   parsePageSize,
@@ -58,7 +59,7 @@ const OPERATOR_TOKEN = /^(f|t|s|d):(\S+)$/i;
 // precedence rule: dropdown is the primary, discoverable UI; the operator
 // syntax is a power-user shortcut layered on top, not a competing source of
 // truth).
-function extractOperators(
+export function extractOperators(
   q: string,
   explicit: Pick<CardSearchParams, "faction" | "type" | "keyword" | "side">,
 ): { residual: string; derived: Pick<CardSearchParams, "faction" | "type" | "keyword" | "side"> } {
@@ -89,11 +90,129 @@ function extractOperators(
 // absent/blank, i.e. the <select>'s default option) falls back to the
 // pre-existing behavior (similarity ranking when there's a `q`, else
 // alphabetical by title) - additive, not a breaking change.
-const ORDER_COLUMNS: Record<string, Prisma.Sql> = {
+export const ORDER_COLUMNS: Record<string, Prisma.Sql> = {
   title: Prisma.sql`title`,
   faction: Prisma.sql`"factionCode"`,
   type: Prisma.sql`"typeCode"`,
 };
+
+// The only safe way to read ORDER_COLUMNS. A plain `order in ORDER_COLUMNS`
+// / `ORDER_COLUMNS[order]` walks the prototype chain, so `?order=constructor`
+// (or `toString`, `valueOf`, `hasOwnProperty`, `__proto__`) passed validation
+// and then yielded a JS *function* instead of a Prisma.Sql - which Prisma
+// bound as a parameter, emitting `ORDER BY $1 ASC, title ASC` with `$1 =
+// NULL` and silently turning sorting into a no-op. Not injection (the value
+// never reaches the SQL text), but wrong. hasOwnProperty.call keeps the
+// lookup to the three real columns.
+export function orderColumn(
+  order: string | undefined,
+): Prisma.Sql | undefined {
+  if (!order) return undefined;
+  return Object.prototype.hasOwnProperty.call(ORDER_COLUMNS, order)
+    ? ORDER_COLUMNS[order]
+    : undefined;
+}
+
+// Escapes LIKE/ILIKE's own metacharacters so a search term is matched
+// literally, then wraps it for a substring match. Without this, `?title=%`
+// matched all 2054 cards and `_` matched every card with a one-character
+// window - while /cards/syntax promises "plain, case-insensitive substring
+// matches". Backslash is LIKE's default escape character in Postgres, and
+// the pattern is a bound parameter (never SQL text), so no explicit ESCAPE
+// clause is needed - but the backslash itself has to be escaped first, or a
+// trailing one would escape the closing `%`.
+export function likePattern(term: string): string {
+  return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+}
+
+// Shared by searchCards() (single-value facets, from /cards) and
+// searchCardsAdvanced() (repeatable facets, from /cards/advanced), so the
+// two pages can never drift on what "faction=anarch" means. Accepts either
+// shape per facet; a single value keeps the plain `=` / `= ANY("keywords")`
+// conditions searchCards() has always issued, so its query plans are
+// unchanged by the extraction (PHASE_7_PLAN.md item 1).
+//
+// Semantics: OR within a facet, AND across facets. The AND is applied by the
+// caller, which joins the returned fragments with " AND ".
+//
+// Every value stays inside a `Prisma.sql` tagged template (auto-
+// parameterized) - never `$queryRawUnsafe` or string concatenation, per this
+// file's header rule.
+export function buildFacetConditions(params: {
+  faction?: string | string[];
+  side?: string;
+  type?: string | string[];
+  keyword?: string | string[];
+  pack?: string | string[];
+  format?: string;
+}): Prisma.Sql[] {
+  const conditions: Prisma.Sql[] = [];
+
+  // `undefined` / `""` / `[]` all mean "no filter"; a one-element array is
+  // treated exactly like the equivalent scalar.
+  function normalize(value: string | string[] | undefined): string[] {
+    if (value === undefined) return [];
+    return (Array.isArray(value) ? value : [value])
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
+
+  // Scalar column, e.g. "factionCode": one value stays `= $1` (the exact
+  // condition searchCards() issued before this extraction); several become
+  // `= ANY($1)` against a bound text[].
+  function scalarColumn(column: Prisma.Sql, values: string[]): void {
+    if (values.length === 0) return;
+    conditions.push(
+      values.length === 1
+        ? Prisma.sql`${column} = ${values[0]}`
+        : Prisma.sql`${column} = ANY(${values})`,
+    );
+  }
+
+  scalarColumn(Prisma.sql`"factionCode"`, normalize(params.faction));
+  scalarColumn(Prisma.sql`"sideCode"`, normalize(params.side));
+  scalarColumn(Prisma.sql`"typeCode"`, normalize(params.type));
+
+  const keywords = normalize(params.keyword);
+  if (keywords.length === 1) {
+    // Array-containment check against `Card.keywords` (String[]) - mirrors
+    // the existing faction/side/type equality-filter pattern exactly, per
+    // PHASE_5_PLAN.md.
+    conditions.push(Prisma.sql`${keywords[0]} = ANY("keywords")`);
+  } else if (keywords.length > 1) {
+    // `= ANY(col)` doesn't generalize to a set of wanted values, so several
+    // requested subtypes become array *overlap* - "has any of these" - which
+    // is the OR-within-a-facet semantics the advanced form specifies.
+    conditions.push(Prisma.sql`"keywords" && ${keywords}`);
+  }
+
+  // Item 1 (PHASE_6_PLAN.md): identical equality-filter pattern to
+  // faction/side/type above - no new pattern introduced.
+  scalarColumn(Prisma.sql`"packCode"`, normalize(params.pack));
+
+  const formats = normalize(params.format);
+  if (formats.length > 0) {
+    // Option A (format-descriptions-links-and-search-plan.md §5): filter by
+    // format *membership* ("is this card in format X's pool at all"), not
+    // "currently legal in X" (Option B - materially harder, deferred). No
+    // native Card.formatIds column exists - format_ids lives inside
+    // Card.raw, so this is a JSONB containment check (`@>`) rather than the
+    // `= ANY(...)` pattern the keyword filter above uses against a real
+    // String[] column. `to_jsonb(...)` converts the bound parameter into the
+    // JSONB-scalar shape `@>` needs, keeping it a properly Prisma-
+    // parameterized value (never raw string concatenation, per this file's
+    // header). Confirmed working and performant (13ms unindexed sequential
+    // scan against the real 2054-row table) in the plan's §2b investigation.
+    // `format` is single-valued on both pages, so only the first value is
+    // used - a set would need an OR of containment checks, which nothing
+    // asks for.
+    conditions.push(
+      Prisma.sql`(raw->'attributes'->'format_ids') @> to_jsonb(${formats[0]}::text)`,
+    );
+  }
+
+  return conditions;
+}
 
 export interface CardSummary {
   code: string;
@@ -155,9 +274,19 @@ export function parseCardSearchParams(
     keyword: keyword ? keyword : undefined,
     pack: pack ? pack : undefined,
     format: format ? format : undefined,
-    order: order && order in ORDER_COLUMNS ? order : undefined,
+    order: orderColumn(order) ? order : undefined,
     page: parsePage(firstParam(input, "page")),
-    pageSize: parsePageSize(firstParam(input, "pageSize")),
+    // Restricted to the set the "Per page" control offers, so the control
+    // and the behaviour agree - `?pageSize=45` renders 30 rows with 30
+    // highlighted, instead of 45 rows under a control claiming 30. The
+    // restriction lives here, at the URL boundary, not in searchCards(),
+    // whose programmatic callers (tests, /formats) still pass any clamped
+    // size they like.
+    pageSize: parsePageSize(
+      firstParam(input, "pageSize"),
+      DEFAULT_PAGE_SIZE,
+      PAGE_SIZE_OPTIONS,
+    ),
   };
 }
 
@@ -168,43 +297,13 @@ export async function searchCards(
   const pageSize = parsePageSize(params.pageSize);
   const q = params.q?.trim() || undefined;
 
-  const conditions: Prisma.Sql[] = [];
-  if (params.faction) {
-    conditions.push(Prisma.sql`"factionCode" = ${params.faction}`);
-  }
-  if (params.side) {
-    conditions.push(Prisma.sql`"sideCode" = ${params.side}`);
-  }
-  if (params.type) {
-    conditions.push(Prisma.sql`"typeCode" = ${params.type}`);
-  }
-  if (params.keyword) {
-    // Array-containment check against `Card.keywords` (String[]) - mirrors
-    // the existing faction/side/type equality-filter pattern exactly, per
-    // PHASE_5_PLAN.md.
-    conditions.push(Prisma.sql`${params.keyword} = ANY("keywords")`);
-  }
-  if (params.pack) {
-    // Item 1 (PHASE_6_PLAN.md): identical equality-filter pattern to
-    // faction/side/type above - no new pattern introduced.
-    conditions.push(Prisma.sql`"packCode" = ${params.pack}`);
-  }
-  if (params.format) {
-    // Option A (format-descriptions-links-and-search-plan.md §5): filter by
-    // format *membership* ("is this card in format X's pool at all"), not
-    // "currently legal in X" (Option B - materially harder, deferred). No
-    // native Card.formatIds column exists - format_ids lives inside
-    // Card.raw, so this is a JSONB containment check (`@>`) rather than the
-    // `= ANY(...)` pattern the keyword filter above uses against a real
-    // String[] column. `to_jsonb(...)` converts the bound parameter into the
-    // JSONB-scalar shape `@>` needs, keeping it a properly Prisma-
-    // parameterized value (never raw string concatenation, per this file's
-    // header). Confirmed working and performant (13ms unindexed sequential
-    // scan against the real 2054-row table) in the plan's §2b investigation.
-    conditions.push(
-      Prisma.sql`(raw->'attributes'->'format_ids') @> to_jsonb(${params.format}::text)`,
-    );
-  }
+  // The six facet conditions live in buildFacetConditions() so /cards and
+  // /cards/advanced share one definition of what each filter means
+  // (PHASE_7_PLAN.md item 1). Behavior here is unchanged: every value
+  // searchCards() receives is a scalar, which the helper renders as the same
+  // `=` / `= ANY("keywords")` / `@>` conditions this function issued inline
+  // before.
+  const conditions: Prisma.Sql[] = buildFacetConditions(params);
   if (q) {
     // `<%` is pg_trgm's word-similarity operator (true when
     // word_similarity(q, column) exceeds pg_trgm.word_similarity_threshold,
@@ -214,7 +313,11 @@ export async function searchCards(
     // OR'd in as a plain-substring safety net for anything word_similarity
     // still misses (e.g. very short queries) - measured as cheap even
     // unindexed at this table's size. See plans/SEARCH_MATCHING.md.
-    const likeQ = `%${q}%`;
+    // likePattern() escapes `%`/`_`/`\` so they match literally - a
+    // pre-existing hole shared with the advanced path, where `?q=%` returned
+    // every card. The word_similarity half is unaffected (a lone `%` has no
+    // trigrams, so it scores 0 and matches nothing there either).
+    const likeQ = likePattern(q);
     conditions.push(
       Prisma.sql`(${q} <% title OR title ILIKE ${likeQ} OR ${q} <% text OR text ILIKE ${likeQ})`,
     );
@@ -229,14 +332,20 @@ export async function searchCards(
   // unstably - see agent-reports/phase-2.md's decklist pagination bug for
   // why an explicit stable ORDER BY matters even for full lists).
   //
-  // An explicit `order` (faction/type - "title" behaves the same as the
-  // pre-existing default and so doesn't need its own branch) takes priority
-  // over similarity ranking, since choosing an explicit sort column is a
-  // deliberate override of "most relevant first".
-  const explicitOrderColumn =
-    params.order && params.order !== "title"
-      ? ORDER_COLUMNS[params.order]
-      : undefined;
+  // An explicit `order` takes priority over similarity ranking, since
+  // choosing a sort column is a deliberate override of "most relevant
+  // first".
+  //
+  // `order=title` is included deliberately. It used to be special-cased away
+  // on the reasoning that title "behaves the same as the pre-existing
+  // default" - true only when there's no `q`. With a `q` the default is
+  // relevance, so skipping the branch made /cards?q=x&order=title silently
+  // rank by relevance while ResultsControls rendered Title as the active
+  // sort. That divergence became visible in Phase 7, which shares one
+  // controls component between /cards and /cards/advanced/results
+  // (PHASE_7_PLAN.md item 2, "identical by construction") while
+  // cards-advanced.ts honored order=title and this did not.
+  const explicitOrderColumn = orderColumn(params.order);
   const orderSql = explicitOrderColumn
     ? Prisma.sql`ORDER BY ${explicitOrderColumn} ASC, title ASC`
     : q

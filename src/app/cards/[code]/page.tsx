@@ -194,7 +194,12 @@ export default async function CardDetailPage({
               {printedInPacks.map((pack, i) => (
                 <span key={pack.code}>
                   {i > 0 && ", "}
-                  <Link href={`/cards?pack=${pack.code}`} className="underline">
+                  {/* /cards/advanced, not /cards, since Phase 7 - the pack
+                      filter is visible and editable there. */}
+                  <Link
+                    href={`/cards/advanced?pack=${pack.code}`}
+                    className="underline"
+                  >
                     {pack.name}
                   </Link>
                 </span>

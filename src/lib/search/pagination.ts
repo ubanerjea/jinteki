@@ -7,6 +7,13 @@ import type { PagedResult } from "./types";
 export const DEFAULT_PAGE_SIZE = 30;
 export const MAX_PAGE_SIZE = 100;
 
+// The page sizes the card pages actually *offer* - the "Per page" links on
+// /cards and /cards/advanced/results, and the "Cards per page" <select> on
+// /cards/advanced. Canonical here rather than in the component so the
+// parsers can hold themselves to the same set without a lib -> component
+// import (ADVANCED_CARD_SEARCH_PLAN.md: `pageSize` ∈ {30, 60, 100}).
+export const PAGE_SIZE_OPTIONS: readonly number[] = [30, 60, 100];
+
 function toFiniteNumber(raw: string | number | undefined): number | undefined {
   if (raw === undefined) return undefined;
   const n = typeof raw === "number" ? raw : Number.parseInt(raw, 10);
@@ -26,13 +33,23 @@ export function parsePage(raw: string | number | undefined): number {
 // Clamped to [1, MAX_PAGE_SIZE] - protects against a URL asking for an
 // absurdly large page (e.g. `?pageSize=999999`) turning into an
 // unbounded query.
+//
+// `allowed` optionally narrows that to an exact set: a value outside it
+// falls back rather than being honoured. Used by the card parsers, whose
+// pages render a fixed 30/60/100 control - without it `?pageSize=45`
+// rendered 45 rows while the control showed 30, so re-submitting the form
+// silently discarded the 45. Left off by default so /decklists and /rules,
+// which share this helper, keep the plain clamp they have always had.
 export function parsePageSize(
   raw: string | number | undefined,
   fallback: number = DEFAULT_PAGE_SIZE,
+  allowed?: readonly number[],
 ): number {
   const n = toFiniteNumber(raw);
   if (n === undefined || n < 1) return fallback;
-  return Math.min(Math.floor(n), MAX_PAGE_SIZE);
+  const size = Math.min(Math.floor(n), MAX_PAGE_SIZE);
+  if (allowed && !allowed.includes(size)) return fallback;
+  return size;
 }
 
 export function pageOffset(page: number, pageSize: number): number {

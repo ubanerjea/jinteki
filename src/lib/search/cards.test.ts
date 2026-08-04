@@ -41,6 +41,52 @@ describe("parseCardSearchParams", () => {
     const result = parseCardSearchParams({ q: ["first", "second"] });
     expect(result.q).toBe("first");
   });
+
+  // Postgres rejects 0x00 in UTF-8 text, so `/cards?q=a%00b` used to 500.
+  it("strips NUL bytes out of every text-ish param", () => {
+    const result = parseCardSearchParams({
+      q: "a\0b",
+      faction: "an\0arch",
+      pack: "core\0_set",
+    });
+    expect(result.q).toBe("ab");
+    expect(result.faction).toBe("anarch");
+    expect(result.pack).toBe("core_set");
+  });
+
+  it("treats a NUL-only q as blank rather than filtering on it", () => {
+    expect(parseCardSearchParams({ q: "\0" }).q).toBeUndefined();
+  });
+
+  // `order in ORDER_COLUMNS` walked the prototype chain, so these all passed
+  // validation and then bound a JS function as a query parameter.
+  it("rejects inherited Object.prototype keys as order values", () => {
+    for (const order of [
+      "constructor",
+      "toString",
+      "valueOf",
+      "hasOwnProperty",
+      "__proto__",
+      "isPrototypeOf",
+    ]) {
+      expect(parseCardSearchParams({ order }).order).toBeUndefined();
+    }
+    // The three real columns still pass.
+    expect(parseCardSearchParams({ order: "title" }).order).toBe("title");
+    expect(parseCardSearchParams({ order: "faction" }).order).toBe("faction");
+    expect(parseCardSearchParams({ order: "type" }).order).toBe("type");
+  });
+
+  // The "Per page" control offers 30/60/100 only; anything else used to be
+  // honoured behind a control that could not display it.
+  it("restricts pageSize to the set the control offers", () => {
+    expect(parseCardSearchParams({ pageSize: "60" }).pageSize).toBe(60);
+    expect(parseCardSearchParams({ pageSize: "100" }).pageSize).toBe(100);
+    expect(parseCardSearchParams({ pageSize: "45" }).pageSize).toBe(30);
+    expect(parseCardSearchParams({ pageSize: "7" }).pageSize).toBe(30);
+    // Still clamped first, so an absurd value lands on 100 (in the set).
+    expect(parseCardSearchParams({ pageSize: "999999" }).pageSize).toBe(100);
+  });
 });
 
 describe("searchCards (real DB)", () => {
@@ -237,6 +283,80 @@ describe("searchCards (real DB)", () => {
         defaultResult.items.map((c) => c.code),
       );
     });
+
+    // `order=title` used to be special-cased away on the reasoning that it
+    // matched the default anyway - which stopped being true as soon as a `q`
+    // was present, since the default there is relevance ranking. The Sort
+    // control rendered Title as active while the rows came back by
+    // relevance. See the ORDER BY comment in cards.ts.
+    // "net damage" is chosen deliberately: most `q` values can't detect this
+    // bug at all. Every literal substring match scores a flat 1.0, so
+    // relevance falls through to its `title ASC` tie-break and the two
+    // orderings coincide (the ranking ceiling documented in
+    // plans/SEARCH_MATCHING.md - confirmed in psql that q="virus", "bioroid"
+    // and even the typo "efficency" each yield exactly one distinct score).
+    // "net damage" spans two score tiers, so title order and relevance order
+    // genuinely differ and the assertion has something to catch.
+    it("order=title sorts by title even when a q makes relevance the default", async () => {
+      const params = { q: "net damage", pageSize: 100 };
+      const byTitle = await searchCards({ ...params, order: "title" });
+      const titles = byTitle.items.map((c) => c.title);
+
+      // Sorted per *Postgres's* collation, not JS localeCompare - the two
+      // disagree on punctuation ("Bio-Modeled Network" vs "Biometric
+      // Spoofing"), and the DB's ordering is what searchCards() promises.
+      // Same reasoning as the default-order test above.
+      const direct = await prisma.card.findMany({
+        where: { code: { in: byTitle.items.map((c) => c.code) } },
+        orderBy: { title: "asc" },
+        select: { title: true },
+      });
+      expect(titles).toEqual(direct.map((c) => c.title));
+
+      // Same rows, different order - so the assertion above can't pass by
+      // coincidence, and order=title is provably not being ignored.
+      const byRelevance = await searchCards(params);
+      expect(byTitle.total).toBe(byRelevance.total);
+      expect(titles).not.toEqual(byRelevance.items.map((c) => c.title));
+    });
+  });
+
+  // LIKE metacharacters are escaped, so `q` is the literal substring the
+  // UI promises. Cross-checked in psql: `title ILIKE '%\%%' ESCAPE '\'` ->
+  // 0 rows, and no card title or text contains a literal % or _ at all.
+  // Before the fix both of these returned all 2054 cards.
+  describe("LIKE metacharacters in q", () => {
+    it("`%` matches literally, not as a wildcard", async () => {
+      const result = await searchCards({ q: "%" });
+      expect(result.total).toBe(0);
+    });
+
+    it("`_` matches literally, not as a single-character wildcard", async () => {
+      const result = await searchCards({ q: "_" });
+      expect(result.total).toBe(0);
+    });
+
+    it("a backslash does not escape the pattern's own delimiters", async () => {
+      const result = await searchCards({ q: "\\" });
+      expect(result.total).toBe(0);
+    });
+
+    it("ordinary queries are unaffected by the escaping", async () => {
+      const result = await searchCards({ q: "bioroid", pageSize: 100 });
+      expect(result.total).toBe(23);
+    });
+  });
+
+  // `order in ORDER_COLUMNS` matched inherited keys, so `order=constructor`
+  // bound a JS function as a query parameter and silently sorted by NULL.
+  it("an inherited Object.prototype key as `order` falls back to the default sort", async () => {
+    const defaultResult = await searchCards({ pageSize: 20 });
+    for (const order of ["constructor", "__proto__", "toString"]) {
+      const result = await searchCards({ order, pageSize: 20 });
+      expect(result.items.map((c) => c.code)).toEqual(
+        defaultResult.items.map((c) => c.code),
+      );
+    }
   });
 
   // Phase 6 item 1: pack filter.
