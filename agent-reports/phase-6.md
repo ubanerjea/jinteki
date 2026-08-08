@@ -5,6 +5,14 @@ addressed: 8 built as scoped, 1 built with a schema materially corrected
 against the real live API (item 9), 1 confirmed not buildable as scoped and
 downgraded per the plan's own explicit allowance (item 10).
 
+**Scope note**: this report covers only what this phase itself built.
+`agent-reports/format-descriptions-links-and-search-build.md` later extended item 9
+substantially — a `Format.description` column + seed data, new `/formats` and
+`/formats/[id]` pages, a homepage "Formats" section + nav link, and (per "Left
+unresolved" below) the `/cards` format filter and restriction history this phase
+explicitly deferred. Points where that follow-on supersedes or extends something built
+here are cross-referenced inline.
+
 ## "Things to confirm at build time" — spike results (done first, for real)
 
 - **Item 2** (`card_set_ids` vs `Pack.code`): confirmed via `psql` —

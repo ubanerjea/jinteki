@@ -51,7 +51,8 @@ over time as work is planned, rather than the full set being decided up front.
 3. **Rules-doc scraper** — `RuleSection` data from NSG's Comprehensive Rules, curated `RuleMapping`.
 4. **Cards/decklists browsing UI** — search, filters, detail pages, Postgres trigram search.
 5. **Rules glossary UI, right-click integration, favorites, admin polish, global nav/auth.**
-6. **NRDB-UX-research-inspired enhancements** — pack filter, operator search syntax, MWL data, etc. (planned, not yet built).
+6. **NRDB-UX-research-inspired enhancements** — pack filter, operator search syntax, MWL (Format/Restriction) data, etc.
+7. **Split card search (simple + advanced)** — `/cards/advanced` structured form, results/syntax pages, facet picker, prefix type-ahead.
 
 ## Phase verification standards
 

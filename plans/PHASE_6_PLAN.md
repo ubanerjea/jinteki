@@ -316,6 +316,29 @@ representation in `prisma/schema.prisma` today.
   sync trigger checked with a real authenticated request using the established real-
   session-cookie technique.
 
+### Follow-on (unnumbered): format descriptions, links, and `/cards` filter
+
+Item 9's optional stretch (a `restriction`/format filter on `/cards`) and its deferred
+restriction history were later designed and built as a separate, unnumbered follow-on —
+not part of this phase's scope — in
+`agent-reports/format-descriptions-links-and-search-plan.md` (design) /
+`-build.md` (build report). Summary, full detail lives in that plan:
+
+- **`Format.description`**: hand-curated seed data (`prisma/format-description-data.ts`
+  via `prisma/seed.ts`), not scraped from NSG's site and not a DB-editable admin table —
+  NRDB's `/formats` API has no description field to sync.
+- **Card-detail legality links**: `summarizeLegality()` (`src/lib/restrictions.ts`)
+  changed from `string[]` to structured `LegalityLine[]` (carrying `formatId`), rendered
+  on `/cards/[code]` as real links via a new `FormatLink` component.
+- **Homepage + nav**: a "Formats" section on `/`, plus a persistent nav link.
+- **New pages**: `/formats` (list) and `/formats/[id]` (description + restriction
+  history + the stretch goal below).
+- **Stretch goal, built**: "currently banned/restricted/pointed in this format" on
+  `/formats/[id]`, via new `src/lib/search/format-cards.ts`.
+- **`/cards` format filter**: membership-only (Option A — `format_ids` JSONB
+  containment); "currently legal in format X" (Option B) deferred further as its own
+  follow-up.
+
 ## 10. Per-pack card ordering / prev-next navigation
 
 - **Verify the field exists at all first** (see "Things to confirm" above) — this item
@@ -370,7 +393,8 @@ sync) verified by real row counts, tests passing. Phase-specific additions:
   exist on those pages to map operators onto yet; revisit only if that changes.
 - NRDB's other four "View as" modes (Full Cards, Text only, Rulings only) beyond the two
   added in item 5 — not clearly distinct enough from what already exists to be worth it.
-- Restriction-based filtering on `/cards` (item 9's optional stretch) and restriction
-  history (showing superseded snapshots, not just the active one).
+- ~~Restriction-based filtering on `/cards` (item 9's optional stretch) and restriction
+  history (showing superseded snapshots, not just the active one).~~ Built via the
+  unnumbered follow-on above.
 - Any deployment/hosting work — still out of scope per `PROJECT_PLAN.md`, unchanged from
   Phase 5's closing note.
