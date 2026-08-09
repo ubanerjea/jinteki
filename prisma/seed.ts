@@ -70,6 +70,26 @@ async function main() {
   console.log(
     `Updated description on ${updatedFormatCount}/${formatDescriptionData.length} Format row(s).`,
   );
+
+  // AllowedLogin: seed the repo owner's own GitHub login so this phase can
+  // never lock the owner out of a fresh database (PHASE_9_PLAN.md §1).
+  // `update: {}` is deliberate - never overwrite: if the owner deactivates
+  // this row while testing the allowlist admin UI, re-running seed must not
+  // silently reactivate it out from under them. Every other allowlist entry
+  // (actual invited people) goes through the /admin/allowlist UI instead -
+  // this seed only ever covers the one row that must exist for the app to
+  // be usable by anyone at all, including the owner, on a fresh database.
+  // "ubanerjea" is already lowercase - must stay that way, since
+  // src/lib/check-allowed-login.ts and addAllowedLogin() both normalize
+  // GitHub logins to lowercase before comparing/storing (case-sensitivity
+  // fix, see check-allowed-login.test.ts).
+  await prisma.allowedLogin.upsert({
+    where: { githubLogin: "ubanerjea" },
+    update: {},
+    create: { githubLogin: "ubanerjea", note: "repo owner" },
+  });
+
+  console.log("Ensured AllowedLogin row for ubanerjea (repo owner).");
 }
 
 main()

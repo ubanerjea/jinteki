@@ -328,6 +328,43 @@ model Restriction {
 }
 
 // ---------------------------------------------------------------------------
+// Remote access allowlist + sign-in audit log — Phase 9
+// (PHASE_9_PLAN.md §1, plans/design/REMOTE_ACCESS_DESIGN.md Decision 5).
+//
+// AllowedLogin is keyed by GitHub `login` (username), not User.id/email -
+// it must be populatable *before* the person it refers to has ever signed
+// in, so it can't reference anything that only exists after their first
+// login. `active` (not row presence/absence) is the actual gate, so
+// deactivating someone keeps their addedAt/note history instead of losing
+// it.
+//
+// LoginAttempt is deliberately NOT a Prisma relation to AllowedLogin - a
+// relation would force every attempt to reference an existing AllowedLogin
+// row, but the whole point of logging attempts is to also capture logins
+// from GitHub accounts that were never allowlisted at all (a stranger
+// trying the URL). `githubLogin` is the key column throughout (not
+// `userId`) since a rejected attempt never gets a User row to point at.
+// ---------------------------------------------------------------------------
+
+model AllowedLogin {
+  githubLogin String   @id
+  active      Boolean  @default(true)
+  addedAt     DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  note        String? // optional: who this is / why they were added — for the owner's own reference
+}
+
+model LoginAttempt {
+  id          String   @id @default(cuid())
+  githubLogin String
+  allowed     Boolean
+  attemptedAt DateTime @default(now())
+
+  @@index([githubLogin])
+  @@index([attemptedAt])
+}
+
+// ---------------------------------------------------------------------------
 // Sync run log — Phase 2. Populated by src/sync/*.ts. Gives the admin sync
 // page ("did the last sync work, when, how many records") something to show.
 // ---------------------------------------------------------------------------

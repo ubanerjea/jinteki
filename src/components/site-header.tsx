@@ -49,6 +49,14 @@ export async function SiteHeader() {
               Admin
             </Link>
           )}
+          {user?.role === "ADMIN" && (
+            <Link
+              href="/admin/allowlist"
+              className="text-zinc-600 hover:underline dark:text-zinc-300"
+            >
+              Allowlist
+            </Link>
+          )}
         </nav>
 
         <div className="flex items-center gap-3 text-sm">

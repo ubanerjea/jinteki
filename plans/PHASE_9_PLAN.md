@@ -58,15 +58,22 @@ GitHub account sign in at all"), separate from and unaffected by role-based auth
    `LoginAttempt`.
 3. **Admin allowlist UI** (`/admin/allowlist`) — add a GitHub login, list current entries with
    active/inactive status and last-login time, activate/deactivate without deleting history.
-4. **Tailscale Funnel setup** — expose the local server at a stable public URL, backgrounded so
-   it survives host reboots (operational step, not code, but documented here so it's not left
-   implicit).
-5. **Second GitHub OAuth App** — registered against the Funnel URL.
-6. **Env var changes** — `AUTH_URL`, fresh `AUTH_SECRET`, new `AUTH_GITHUB_ID`/`_SECRET`, all
-   documented in `.env.example`.
-7. **Verification** — an allowlisted and a non-allowlisted GitHub account both attempt sign-in
-   against the Funnel URL from a second machine; the admin UI correctly gates, lists, and
-   toggles access.
+4. **Two-process local setup** (resolved 2026-08-09, was previously an open question left to
+   "however the owner chooses"): local dev (`pnpm dev`, port 3000, the existing localhost OAuth
+   app) and the Funnel-facing remote instance (new `start:remote` script, port 3001, a separate
+   `.env.remote` file) run as two independent, simultaneously-running processes on the same
+   machine — never a swap-before-starting step. Includes the env var changes previously listed
+   as a separate item; see section 4 below for the full mechanism, including a real landmine in
+   how Next.js merges env files that needs direct verification, not assumption.
+5. **Tailscale Funnel setup** — now targets port **3001** (the remote process), not 3000;
+   backgrounded so it survives host reboots (operational step, not code, but documented here so
+   it's not left implicit).
+6. **Second GitHub OAuth App** — registered against the Funnel URL, which proxies to port 3001.
+7. **Verification** — split explicitly into what's verifiable now (schema, seed, gate logic,
+   admin UI, the two-process/port mechanism itself) versus what requires sections 5–6 to be done
+   manually first (an allowlisted and non-allowlisted GitHub account actually attempting sign-in
+   through the real Funnel URL, Funnel's reboot survival) — see the "Deferred verification"
+   subsection.
 
 ---
 
@@ -259,21 +266,88 @@ that (nonexistent) login can ever match it, which is a harmless no-op, not a sec
 
 ---
 
-## 4. Tailscale Funnel setup (operational, not code)
+## 4. Two-process local setup (ports + env files)
 
-Done on the machine currently running `pnpm dev`/`pnpm start`:
+**Decision (2026-08-09)**: run local dev and the Funnel-facing remote instance as two
+independent processes, on two different ports, at the same time — not a single process whose
+env gets swapped before each start. Local dev stays exactly as it is today (`pnpm dev`, port
+3000, the original localhost OAuth app, plain `.env`); a new `start:remote` script runs a
+second, separate process on port 3001 against a separate env file, so the owner can develop
+locally and serve the shared instance simultaneously without ever stopping one to run the
+other.
+
+**`.env.remote`** (new, gitignored exactly like `.env` — add it alongside `.env` in
+`.gitignore`) is **self-contained**, not a partial override layered on top of `.env`:
+
+```
+DATABASE_URL="postgresql://jinteki:jinteki_dev_password@localhost:5432/jinteki?schema=public"
+AUTH_GITHUB_ID=<from section 6 below>
+AUTH_GITHUB_SECRET=<from section 6 below>
+AUTH_URL=https://<host>.<tailnet-name>.ts.net
+AUTH_SECRET=<fresh value from `npx auth secret` — NOT the local dev one>
+AUTH_TRUST_HOST=
+```
+
+**Why self-contained, and the landmine this avoids**: Next.js's built-in env loader
+(`@next/env`) reads `.env`/`.env.production` from disk on every start *regardless* of what
+another tool already put in `process.env`, but a key already present in `process.env` wins over
+whatever that file says for the same key — it does not "unset" or blank out a key the file
+defines that the override omits. So if `.env.remote` only contained the four `AUTH_*` overrides
+and omitted `AUTH_TRUST_HOST` entirely, `next start`'s own loader would still pick up
+`AUTH_TRUST_HOST=true` from the *local* `.env` file sitting in the same directory (it's read
+unconditionally, override or not) — silently reintroducing the exact "trust any Host header"
+problem `AUTH_URL` exists to replace, on the one process where it matters most. Setting
+`AUTH_TRUST_HOST=` (empty) explicitly in `.env.remote` closes that gap by giving the key a
+falsy value *before* Next's own loader runs, rather than leaving it absent for `.env` to fill
+in. `DATABASE_URL` is included too (identical value to `.env` — same shared Postgres, per plan
+§1's "unchanged" note) purely so `.env.remote` never depends on `.env`'s contents at all —
+one file, fully describing one process, no merge order to reason about.
+
+**`package.json`** gains one script (mirroring the existing `dev`/`build`/`start` scripts'
+style):
+
+```json
+"start:remote": "dotenv -e .env.remote -- next start -p 3001"
+```
+
+using `dotenv-cli` (new devDependency — `pnpm add -D dotenv-cli`) to load an arbitrarily-named
+env file, since Next.js's own convention-based loading (`.env.local`, `.env.production`, etc.)
+has no mechanism for a custom filename. `dotenv-cli` is cross-platform (works identically under
+this repo's PowerShell-primary/bash-secondary environment — see `AGENTS.md`/environment notes),
+which a raw shell `VAR=x command` prefix would not be.
+
+**This whole mechanism is directly verifiable now**, without Tailscale or a real second OAuth
+app existing yet — per `RESEARCH_AND_VERIFICATION_PRINCIPLES.md`, don't assume the env
+precedence reasoning above is correct just because it's plausible:
+
+1. Fill `.env.remote` with placeholder `AUTH_GITHUB_ID`/`_SECRET` values (sign-in itself can't
+   work without a real OAuth app yet, but the process should still boot) and a real
+   `AUTH_SECRET`.
+2. Run `pnpm start:remote` alongside an already-running `pnpm dev` — confirm both processes stay
+   up simultaneously on their respective ports (`curl http://localhost:3000` and
+   `curl http://localhost:3001` both succeed at the same time).
+3. Add a temporary log line (or a throwaway debug route) printing
+   `process.env.AUTH_URL`/`process.env.AUTH_TRUST_HOST` on the port-3001 process at boot; confirm
+   it reads `.env.remote`'s values (`AUTH_URL` set, `AUTH_TRUST_HOST` empty/falsy) and *not*
+   `.env`'s (`AUTH_TRUST_HOST=true`) — this is the actual test of the landmine above, not just
+   code inspection. Remove the temporary log line once confirmed.
+
+## 5. Tailscale Funnel setup (operational, not code)
+
+Done on the machine currently running the port-3001 remote process (`pnpm start:remote`):
 
 1. Install Tailscale, sign in, confirm the machine joins the owner's tailnet.
-2. `tailscale funnel -bg 3000` — the confirmed current syntax (Tailscale CLI reference,
-   `tailscale funnel -bg [flags] <target>`) for exposing local port 3000 at a public
-   `https://<host>.<tailnet-name>.ts.net` URL. **Use `-bg`, not bare `tailscale funnel 3000`**:
-   per Tailscale's own docs, `-bg` makes Funnel "run persistently in the background" and
-   auto-resume after the host reboots or Tailscale restarts (`tailscale down`/`tailscale up`);
-   without it, a reboot silently drops the public URL until someone manually re-runs the
-   command — an availability gap with no error surfaced to remote users, just a dead link.
+2. `tailscale funnel -bg 3001` — **note the port is 3001, not 3000** (section 4's decision) —
+   the confirmed current syntax (Tailscale CLI reference, `tailscale funnel -bg [flags]
+   <target>`) for exposing local port 3001 at a public `https://<host>.<tailnet-name>.ts.net`
+   URL. **Use `-bg`, not bare `tailscale funnel 3001`**: per Tailscale's own docs, `-bg` makes
+   Funnel "run persistently in the background" and auto-resume after the host reboots or
+   Tailscale restarts (`tailscale down`/`tailscale up`); without it, a reboot silently drops the
+   public URL until someone manually re-runs the command — an availability gap with no error
+   surfaced to remote users, just a dead link.
 3. Confirm the URL is reachable from a network *other than* the host's own LAN (e.g. phone on
    cellular data) — LAN-reachability alone doesn't prove the public path works.
-4. Note the exact URL — it's needed verbatim for steps 5–6 below.
+4. Note the exact URL — it's needed verbatim for section 6 below.
 5. The hostname (`<host>.<tailnet-name>.ts.net`) is derived from the device's Tailscale machine
    name and tailnet name, not randomly generated — confirmed stable across restarts (Tailscale
    Funnel docs); it only changes if the device or tailnet is renamed, which is a deliberate
@@ -281,60 +355,46 @@ Done on the machine currently running `pnpm dev`/`pnpm start`:
 
 ---
 
-## 5. Second GitHub OAuth App
+## 6. Second GitHub OAuth App
 
 Per `REMOTE_ACCESS_PLAN.md`'s shared prerequisite #1 — a manual, one-time step by whoever owns
 the GitHub account registering it (the repo owner):
 
 1. GitHub → Settings → Developer settings → OAuth Apps → New OAuth App.
-2. Homepage URL and Authorization callback URL both set to the Funnel URL from step 4
+2. Homepage URL and Authorization callback URL both set to the Funnel URL from section 5
    (callback: `https://<host>.<tailnet-name>.ts.net/api/auth/callback/github`).
 3. Generate a client secret. **Do not reuse** the existing localhost dev app's credentials —
    this is a second, separate OAuth app per the design doc.
+4. Paste the real `AUTH_GITHUB_ID`/`AUTH_GITHUB_SECRET` values into `.env.remote` (section 4),
+   replacing the placeholders used for the local verification pass.
 
----
-
-## 6. Env var changes
-
-New/changed values for the deployment running under the Funnel URL (not the local dev `.env`
-— this is a second, separate set of env values for the same codebase, however the owner
-chooses to keep them apart, e.g. a `.env.remote` swapped in when running the shared instance):
-
-```
-AUTH_GITHUB_ID=<from step 4>
-AUTH_GITHUB_SECRET=<from step 4>
-AUTH_URL=https://<host>.<tailnet-name>.ts.net
-AUTH_SECRET=<fresh value from `npx auth secret`, NOT the local dev one>
-```
-
-Remove/unset `AUTH_TRUST_HOST` for this deployment — `AUTH_URL` being set makes it unnecessary,
-and per `.env.example`'s own existing comment (lines 44–47), blanket-trusting the `Host` header
-is the wrong choice once a real public hostname is in play. Update `.env.example` with a
-comment describing this second env-value set and pointing at
-`plans/design/REMOTE_ACCESS_DESIGN.md` for why it exists, so a future reader isn't left
-guessing why there are two OAuth apps.
-
-`DATABASE_URL` and Postgres itself are **unchanged** — the Funnel only exposes port 3000 (the
-Next.js app), not 5432; Postgres stays bound to `localhost` exactly as today, reached only by
-the Next.js server process on the same machine.
+Update `.env.example` (and add a new `.env.remote.example`, mirroring section 4's template
+above with placeholder values) so a future reader isn't left guessing why there are two OAuth
+apps or two `.env*` files — point both at `plans/design/REMOTE_ACCESS_DESIGN.md` for the "why."
 
 ---
 
 ## 7. Verification
 
+### Verifiable now (no Funnel, no second OAuth app required)
+
 - After `pnpm prisma db seed`, confirm `ubanerjea` already appears, active, in
-  `/admin/allowlist` **without** any manual add step — sign in as the owner via the Funnel URL
-  from a second, physically separate machine; confirm a `User`/`Account`/`Session` row is
-  created, the app is usable (browse cards/decklists, favorite something), and a `LoginAttempt`
-  row (`allowed: true`) now shows as "Last login" for that entry in the admin UI.
+  `/admin/allowlist` **without** any manual add step.
 - Re-run `pnpm prisma db seed` a second time; confirm it's a no-op for the `ubanerjea` row (in
   particular, that manually deactivating it first and then reseeding leaves it deactivated —
   proving `update: {}` doesn't fight the admin UI's toggle).
-- From a GitHub account **not** in `AllowedLogin`, attempt sign-in via the same Funnel URL;
-  confirm the attempt is rejected, that — check directly in Prisma Studio — **no** new `User` or
-  `Account` row was created for that account, and that a `LoginAttempt` row (`allowed: false`)
-  for that login now appears in the admin UI's "Recent sign-in activity" table despite no
-  matching `AllowedLogin` row existing.
+- Sign in as the owner via the **existing local dev OAuth app** (`pnpm dev`, port 3000, no
+  Funnel needed) — confirm a `User`/`Account`/`Session` row is created, the app is usable
+  (browse cards/decklists, favorite something), and a `LoginAttempt` row (`allowed: true`) now
+  shows as "Last login" for `ubanerjea` in the admin UI. This exercises the real `signIn`
+  callback end-to-end through a genuine GitHub OAuth handshake — it doesn't need the Funnel URL
+  specifically, just *some* real OAuth app pointed at *some* reachable callback URL, and
+  localhost already qualifies.
+- From a second, real GitHub account **not** in `AllowedLogin`, attempt sign-in via that same
+  local dev OAuth app; confirm the attempt is rejected, that — check directly in Prisma Studio —
+  **no** new `User` or `Account` row was created for that account, and that a `LoginAttempt` row
+  (`allowed: false`) for that login now appears in the admin UI's "Recent sign-in activity"
+  table despite no matching `AllowedLogin` row existing.
 - Deactivate a previously-allowed test login via the UI's Activate/Deactivate button; confirm a
   subsequent sign-in attempt from that account is now rejected (same as a never-allowlisted
   account), and that its `AllowedLogin` row (`addedAt`, `note`) is still visible in the UI rather
@@ -346,6 +406,34 @@ the Next.js server process on the same machine.
 - Confirm `/admin/allowlist` itself is inaccessible (inline "Access denied", matching
   `/admin/sync`'s behavior) to a signed-in, allowlisted, non-admin account, and that its nav
   link is absent from the site header for that account.
-- After a host reboot (or `tailscale down` / `tailscale up`), confirm the Funnel URL is still
+- Section 4's two-process/env-file mechanism (`pnpm dev` on 3000 and `pnpm start:remote` on
+  3001 running simultaneously, `.env.remote`'s values winning over `.env`'s for the remote
+  process, `AUTH_TRUST_HOST` actually reading empty on port 3001 rather than leaking `true` from
+  `.env`) — fully verifiable locally per section 4's own numbered steps, using placeholder OAuth
+  credentials since real sign-in on port 3001 isn't possible until section 6 exists.
+
+### Deferred — requires sections 5–6 (Tailscale Funnel + second GitHub OAuth App) to exist first
+
+These cannot be exercised by any build or verify subagent run during this phase's automatable
+build pass, regardless of how thorough that pass is — they depend on infrastructure
+(a live public Funnel URL, a registered OAuth app with real credentials) that only the repo
+owner can create, using their own GitHub and Tailscale accounts. **Not a gap in this phase's
+build/verify cycle — a hard boundary of what's testable before those manual steps exist.**
+Track these as explicit follow-ups once the owner completes sections 5–6, not as unresolved
+build work:
+
+- An allowlisted GitHub account signing in through the *actual* Funnel URL (not just the local
+  dev OAuth app) from a genuinely separate machine — confirms the public path works end-to-end,
+  not just that the gate logic is correct in isolation (already verified above).
+- A non-allowlisted GitHub account attempting the same, through the real Funnel URL.
+- After a host reboot (or `tailscale down` / `tailscale up`), confirming the Funnel URL is still
   live without manually re-running `tailscale funnel` — the actual point of using `-bg` in
-  section 4.
+  section 5; meaningless to test before Funnel exists.
+- Confirming `AUTH_URL`/`AUTH_TRUST_HOST` behave correctly against a *real* public hostname
+  (not just the locally-verified env-precedence mechanism from section 4) — the local check
+  proves the right values reach `process.env`; it can't prove Auth.js's redirect/callback
+  handling is correct against a hostname that isn't `localhost`, since no such hostname exists
+  yet to test against.
+
+`agent-reports/phase-9.md` should reference this subsection by name once these steps are
+actually completed by the owner, rather than re-deriving a fresh checklist from scratch.

@@ -3,6 +3,7 @@ import GitHub from "next-auth/providers/github";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 
 import { prisma } from "@/lib/prisma";
+import { checkAndRecordLoginAttempt } from "@/lib/check-allowed-login";
 
 // Auth.js v5 (next-auth@beta) config, GitHub as the sole OAuth provider per
 // PROJECT_PLAN.md ("simplest OAuth app setup"). GitHub's clientId/clientSecret
@@ -18,6 +19,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // populates the Session table and is the adapter's recommended default.
   session: { strategy: "database" },
   callbacks: {
+    // Phase 9 (PHASE_9_PLAN.md §2, plans/design/REMOTE_ACCESS_DESIGN.md
+    // Decision 5): sign-in allowlist gate. `profile` is the raw GitHub OAuth
+    // profile Auth.js receives mid-flow - `login` is present on every GitHub
+    // profile regardless of whether the user has a public email. Returning
+    // `false` here stops the flow before PrismaAdapter creates or links any
+    // User/Account row, so a rejected login never persists anything besides
+    // the LoginAttempt audit row written below. This gate is strictly
+    // earlier than and separate from User.role (ADMIN/USER) - it decides
+    // "can this GitHub account sign in at all", not "what can a signed-in
+    // user do".
+    async signIn({ profile }) {
+      const login = (profile as { login?: string } | undefined)?.login;
+      return checkAndRecordLoginAttempt(login);
+    },
     session({ session, user }) {
       if (session.user) {
         session.user.id = user.id;
