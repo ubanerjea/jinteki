@@ -1,0 +1,351 @@
+# jinteki — Phase 9 Build Plan: Remote Access (Tailscale Funnel + Sign-in Allowlist)
+
+## Context
+
+`plans/REMOTE_ACCESS_PLAN.md` surveys five ways to let other machines reach jinteki;
+`plans/design/REMOTE_ACCESS_DESIGN.md` records the decision reached from that survey through a
+design interview with the repo owner (2026-08-09): expose the existing local deployment via
+**Tailscale Funnel** (a free, stable public HTTPS URL, no domain purchase, no new hosting
+account), gated by a new **application-layer sign-in allowlist** so only pre-approved GitHub
+accounts can ever get a session — deliberately chosen over Tailscale's private-tailnet mode so
+that widening access later is a config change, not a redeployment. Read both docs before
+building; this plan translates their decisions into concrete steps and does not re-derive the
+reasoning behind them.
+
+Nothing here changes `auth.ts`'s provider, `PROJECT_PLAN.md`'s scope, or the existing
+`User.role` (`ADMIN`/`USER`) system — the allowlist is a strictly earlier gate ("can this
+GitHub account sign in at all"), separate from and unaffected by role-based authorization
+("what can a signed-in user do").
+
+## Baseline read directly against the repo before writing this plan
+
+- `auth.ts` has no `signIn` callback today — every GitHub account that completes OAuth gets a
+  `User` row created via `PrismaAdapter` and a database session, unconditionally.
+- `prisma/schema.prisma`'s `User` model (line 199) has no field suitable for a pre-signup
+  allowlist — `email` is nullable/GitHub-private-capable, and there is no `login`/username
+  column at all today.
+- `.env.example` already documents `AUTH_TRUST_HOST=true` for local-only use and flags (lines
+  33–47) that a real public hostname should use `AUTH_URL` instead — this phase is the case
+  that comment was written for.
+- `src/lib/require-admin.ts` promotes admins via a one-off manual `User.role` edit through
+  Prisma Studio — design doc Decision 5 originally proposed following that same
+  manual-via-Prisma-Studio pattern for allowlist management too. **Superseded below**: the
+  repo owner asked for a proper admin UI (add/list/activate/deactivate + a login audit trail)
+  instead of raw table edits, once it became clear the allowlist would need to be touched more
+  often than a one-time admin promotion.
+- `src/app/admin/sync/` is the one existing admin UI in this codebase: a server-component page
+  gated by `requireAdmin()` (try/catch, rendering "Access denied" inline rather than a hard
+  404/500), a small `STATUS_STYLES`/badge convention, and a `"use client"` button that `fetch()`s
+  a POST API route under `src/app/api/admin/...`.
+- `src/app/actions/favorites.ts` is this codebase's other established mutation pattern: plain
+  `"use server"` Server Actions bound directly to `<form action={...}>` — real HTML forms,
+  curl-testable, no client-side JS required. This phase's allowlist CRUD (add / activate /
+  deactivate) is a closer fit to this pattern than to the sync page's fetch+API-route one — it's
+  simple state toggles, not a long-running job needing a "pending" spinner — so it follows
+  `favorites.ts`'s Server Actions convention instead, while keeping the sync page's
+  requireAdmin()-gated-page-with-inline-denial layout.
+- `src/components/site-header.tsx` renders the `/admin/sync` nav link only when
+  `user?.role === "ADMIN"` (line 44) — the new `/admin/allowlist` link follows the same
+  conditional.
+
+## Scope
+
+1. **Schema migration** — new `AllowedLogin` table (with an `active` status, not just presence/
+   absence) and a new append-only `LoginAttempt` audit table, seeded with the repo owner's own
+   GitHub login so this phase can never lock the owner out.
+2. **`signIn` callback** — reject non-allowlisted *or deactivated* GitHub logins before any
+   `User`/`Account`/`Session` row is created; record every attempt (allowed or not) to
+   `LoginAttempt`.
+3. **Admin allowlist UI** (`/admin/allowlist`) — add a GitHub login, list current entries with
+   active/inactive status and last-login time, activate/deactivate without deleting history.
+4. **Tailscale Funnel setup** — expose the local server at a stable public URL, backgrounded so
+   it survives host reboots (operational step, not code, but documented here so it's not left
+   implicit).
+5. **Second GitHub OAuth App** — registered against the Funnel URL.
+6. **Env var changes** — `AUTH_URL`, fresh `AUTH_SECRET`, new `AUTH_GITHUB_ID`/`_SECRET`, all
+   documented in `.env.example`.
+7. **Verification** — an allowlisted and a non-allowlisted GitHub account both attempt sign-in
+   against the Funnel URL from a second machine; the admin UI correctly gates, lists, and
+   toggles access.
+
+---
+
+## 1. Schema migration
+
+`prisma/schema.prisma` gains two new models:
+
+```prisma
+model AllowedLogin {
+  githubLogin String   @id
+  active      Boolean  @default(true)
+  addedAt     DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  note        String?  // optional: who this is / why they were added — for the owner's own reference
+}
+
+model LoginAttempt {
+  id          String   @id @default(cuid())
+  githubLogin String
+  allowed     Boolean
+  attemptedAt DateTime @default(now())
+
+  @@index([githubLogin])
+  @@index([attemptedAt])
+}
+```
+
+`AllowedLogin` keyed by GitHub `login` (username), not `User.id` or email — per design doc
+Decision 5, this table must be populatable *before* the person it refers to has ever signed in,
+so it can't reference anything that only exists after their first login. `note` is a plain
+optional field for the owner's own bookkeeping (e.g. `"alice — local playgroup"`); not read by
+any app logic. `active` replaces plain row-presence as the gate (row exists but `active: false`
+== revoked-but-remembered) so deactivating someone doesn't lose their `addedAt`/`note` history
+or require re-typing their username to reinstate them later.
+
+`LoginAttempt` is deliberately **not** a Prisma relation to `AllowedLogin` (no `@relation`, just
+a plain `githubLogin` string column) — a relation with `AllowedLogin.githubLogin` as its target
+would force every attempt to reference an existing `AllowedLogin` row, but the whole point of
+logging attempts is to also capture logins from GitHub accounts that were **never** allowlisted
+at all (a stranger trying the URL). Kept intentionally minimal per the "nothing too fancy"
+brief: no IP address or user-agent capture — Auth.js v5's `signIn` callback isn't hard-wired
+into the request object the way an API route handler is, so getting at request metadata there
+would mean threading extra plumbing through for a small-group audit log that doesn't need it.
+`githubLogin` (not `userId`) is the key column throughout, since a rejected attempt never gets a
+`User` row to point at, and using two different keying schemes for allowed-vs-rejected rows
+would complicate the admin UI's single combined activity list for no real benefit.
+
+- **Migration**: `pnpm prisma migrate dev --name add_allowed_login_and_login_attempt`.
+- `LoginAttempt` starts empty (nothing to backfill — it's a forward-only log). `AllowedLogin`
+  is **seeded**, not left empty: `prisma/seed.ts` (existing file, already run via
+  `pnpm prisma db seed` — see `RuleMapping`'s seeding for precedent) gains
+
+  ```ts
+  await prisma.allowedLogin.upsert({
+    where: { githubLogin: "ubanerjea" },
+    update: {}, // never overwrite — if the owner deactivates this row while testing,
+                // re-running seed must not silently reactivate it out from under them
+    create: { githubLogin: "ubanerjea", note: "repo owner" },
+  });
+  ```
+
+  `update: {}` mirrors `RuleMapping`'s own upsert in the same file — create-if-missing, no-op if
+  present — so this seed step is safe to rerun (`pnpm prisma db seed` is idempotent) without
+  fighting the admin UI's activate/deactivate toggle. This is what makes the "add the owner's
+  own login before merging or local sign-in breaks" hazard (section 2 below) a non-issue: it's
+  now guaranteed by running the standard setup command, not a manual step someone can forget.
+
+  Every other allowlist entry (actual invited friends) still goes through the admin UI — this
+  seed only ever covers the one row that must exist for the app to be usable by anyone at all,
+  including the owner, on a completely fresh database.
+
+---
+
+## 2. `signIn` callback (`auth.ts`)
+
+Add a `signIn` callback that checks the GitHub profile's `login` against `AllowedLogin`
+(present **and** `active`), rejects everyone else before the adapter persists anything, and
+records every attempt either way:
+
+```ts
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  adapter: PrismaAdapter(prisma),
+  providers: [GitHub],
+  session: { strategy: "database" },
+  callbacks: {
+    async signIn({ profile }) {
+      const login = (profile as { login?: string } | undefined)?.login;
+      if (!login) return false;
+
+      const entry = await prisma.allowedLogin.findUnique({ where: { githubLogin: login } });
+      const allowed = entry?.active === true;
+
+      await prisma.loginAttempt.create({ data: { githubLogin: login, allowed } });
+
+      return allowed;
+    },
+    session({ session, user }) {
+      if (session.user) {
+        session.user.id = user.id;
+        session.user.role = user.role;
+      }
+      return session;
+    },
+  },
+});
+```
+
+- `profile` here is the raw GitHub OAuth profile Auth.js receives mid-flow — `login` is present
+  on every GitHub profile regardless of whether the user has a public email, confirming design
+  doc Decision 5's reasoning for keying on `login` over email.
+- Gate is `entry?.active === true`, not just `entry !== null` — a deactivated entry still exists
+  (so its history survives in the admin UI) but must fail the gate exactly like a login that was
+  never added at all.
+- The `loginAttempt.create()` runs for every attempt, allowed or not, before returning — so a
+  stranger who was never allowlisted still produces a `LoginAttempt` row (`allowed: false`) the
+  admin can see in the UI, even though no `AllowedLogin` row exists for them.
+- Returning `false` from `signIn` stops the flow before `PrismaAdapter` creates or links any
+  `User`/`Account` row — confirm this directly (a rejected sign-in attempt should leave zero
+  new rows in `User`/`Account`, checkable via Prisma Studio) rather than assuming Auth.js's
+  documented behavior holds in this exact adapter/version combination, per
+  `RESEARCH_AND_VERIFICATION_PRINCIPLES.md`.
+- Existing local dev flow is unaffected *only if* the owner's own GitHub login is present and
+  `active` in `AllowedLogin` — guaranteed by the seed step above (section 1) running as part of
+  the normal `pnpm prisma db seed`, not a manual step someone has to remember before merging.
+
+---
+
+## 3. Admin allowlist UI (`/admin/allowlist`)
+
+Follows `src/app/admin/sync/page.tsx`'s page-gating shape (server component, `requireAdmin()`
+in a try/catch rendering inline "Access denied" text on failure, same Tailwind table
+conventions and a `StatusBadge`-style component for Active/Inactive) but uses
+`src/app/actions/favorites.ts`'s Server Actions convention for mutations, since these are plain
+state toggles rather than a long-running job.
+
+**`src/app/actions/allowlist.ts`** (new, `"use server"`, each function opens with
+`await requireAdmin()`):
+
+```ts
+export async function addAllowedLogin(formData: FormData) {
+  await requireAdmin();
+  const githubLogin = String(formData.get("githubLogin") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim() || null;
+  if (!githubLogin) throw new Error("GitHub login is required");
+
+  // upsert, not create: re-submitting an existing (possibly deactivated) login
+  // reactivates it and updates the note, rather than erroring on the unique constraint
+  await prisma.allowedLogin.upsert({
+    where: { githubLogin },
+    update: { active: true, note },
+    create: { githubLogin, note },
+  });
+
+  revalidatePath("/admin/allowlist");
+}
+
+export async function setAllowedLoginActive(githubLogin: string, active: boolean) {
+  await requireAdmin();
+  await prisma.allowedLogin.update({ where: { githubLogin }, data: { active } });
+  revalidatePath("/admin/allowlist");
+}
+```
+
+**`src/app/admin/allowlist/page.tsx`** (new, server component):
+
+- Gated by `requireAdmin()`, same inline-denial pattern as `/admin/sync`.
+- An "Add" form (`<form action={addAllowedLogin}>`, plain `githubLogin` + optional `note`
+  inputs) at the top.
+- A table of every `AllowedLogin` row (no pagination — this is a small-group list, per design
+  doc Decision 1), columns: GitHub login, Active/Inactive badge, Added, Note, Last login, and an
+  Activate/Deactivate button per row. "Last login" is
+  `prisma.loginAttempt.findFirst({ where: { githubLogin, allowed: true }, orderBy: { attemptedAt: "desc" } })`
+  per row — an N+1 query, accepted deliberately at this table's expected size (a handful of
+  rows) rather than building a grouped/windowed query for it.
+- The per-row Activate/Deactivate button is its own small `<form action={...}>` with a hidden
+  `githubLogin` field, bound to a thin wrapper action (`toggleAllowedLogin(formData)` calling
+  `setAllowedLoginActive` with the opposite of the row's current `active` value) — no
+  `"use client"` needed, matching `favorites.ts`'s no-client-JS philosophy.
+- A second, smaller "Recent sign-in activity" table below: the last 20 `LoginAttempt` rows
+  (`orderBy: { attemptedAt: "desc" }, take: 20`), columns GitHub login / Allowed-or-Denied /
+  When — this is what surfaces a stranger's rejected attempt even though they have no
+  `AllowedLogin` row at all.
+
+`src/components/site-header.tsx`'s admin nav (line 44's `user?.role === "ADMIN"` block) gains a
+second link, `/admin/allowlist`, next to the existing `/admin/sync` one.
+
+Basic input validation on `githubLogin` (trim, non-empty) is enough here — GitHub's own OAuth
+flow is the actual source of truth for whether a login is real; a typo just means nobody with
+that (nonexistent) login can ever match it, which is a harmless no-op, not a security hole.
+
+---
+
+## 4. Tailscale Funnel setup (operational, not code)
+
+Done on the machine currently running `pnpm dev`/`pnpm start`:
+
+1. Install Tailscale, sign in, confirm the machine joins the owner's tailnet.
+2. `tailscale funnel -bg 3000` — the confirmed current syntax (Tailscale CLI reference,
+   `tailscale funnel -bg [flags] <target>`) for exposing local port 3000 at a public
+   `https://<host>.<tailnet-name>.ts.net` URL. **Use `-bg`, not bare `tailscale funnel 3000`**:
+   per Tailscale's own docs, `-bg` makes Funnel "run persistently in the background" and
+   auto-resume after the host reboots or Tailscale restarts (`tailscale down`/`tailscale up`);
+   without it, a reboot silently drops the public URL until someone manually re-runs the
+   command — an availability gap with no error surfaced to remote users, just a dead link.
+3. Confirm the URL is reachable from a network *other than* the host's own LAN (e.g. phone on
+   cellular data) — LAN-reachability alone doesn't prove the public path works.
+4. Note the exact URL — it's needed verbatim for steps 5–6 below.
+5. The hostname (`<host>.<tailnet-name>.ts.net`) is derived from the device's Tailscale machine
+   name and tailnet name, not randomly generated — confirmed stable across restarts (Tailscale
+   Funnel docs); it only changes if the device or tailnet is renamed, which is a deliberate
+   owner action, not something that happens on its own.
+
+---
+
+## 5. Second GitHub OAuth App
+
+Per `REMOTE_ACCESS_PLAN.md`'s shared prerequisite #1 — a manual, one-time step by whoever owns
+the GitHub account registering it (the repo owner):
+
+1. GitHub → Settings → Developer settings → OAuth Apps → New OAuth App.
+2. Homepage URL and Authorization callback URL both set to the Funnel URL from step 4
+   (callback: `https://<host>.<tailnet-name>.ts.net/api/auth/callback/github`).
+3. Generate a client secret. **Do not reuse** the existing localhost dev app's credentials —
+   this is a second, separate OAuth app per the design doc.
+
+---
+
+## 6. Env var changes
+
+New/changed values for the deployment running under the Funnel URL (not the local dev `.env`
+— this is a second, separate set of env values for the same codebase, however the owner
+chooses to keep them apart, e.g. a `.env.remote` swapped in when running the shared instance):
+
+```
+AUTH_GITHUB_ID=<from step 4>
+AUTH_GITHUB_SECRET=<from step 4>
+AUTH_URL=https://<host>.<tailnet-name>.ts.net
+AUTH_SECRET=<fresh value from `npx auth secret`, NOT the local dev one>
+```
+
+Remove/unset `AUTH_TRUST_HOST` for this deployment — `AUTH_URL` being set makes it unnecessary,
+and per `.env.example`'s own existing comment (lines 44–47), blanket-trusting the `Host` header
+is the wrong choice once a real public hostname is in play. Update `.env.example` with a
+comment describing this second env-value set and pointing at
+`plans/design/REMOTE_ACCESS_DESIGN.md` for why it exists, so a future reader isn't left
+guessing why there are two OAuth apps.
+
+`DATABASE_URL` and Postgres itself are **unchanged** — the Funnel only exposes port 3000 (the
+Next.js app), not 5432; Postgres stays bound to `localhost` exactly as today, reached only by
+the Next.js server process on the same machine.
+
+---
+
+## 7. Verification
+
+- After `pnpm prisma db seed`, confirm `ubanerjea` already appears, active, in
+  `/admin/allowlist` **without** any manual add step — sign in as the owner via the Funnel URL
+  from a second, physically separate machine; confirm a `User`/`Account`/`Session` row is
+  created, the app is usable (browse cards/decklists, favorite something), and a `LoginAttempt`
+  row (`allowed: true`) now shows as "Last login" for that entry in the admin UI.
+- Re-run `pnpm prisma db seed` a second time; confirm it's a no-op for the `ubanerjea` row (in
+  particular, that manually deactivating it first and then reseeding leaves it deactivated —
+  proving `update: {}` doesn't fight the admin UI's toggle).
+- From a GitHub account **not** in `AllowedLogin`, attempt sign-in via the same Funnel URL;
+  confirm the attempt is rejected, that — check directly in Prisma Studio — **no** new `User` or
+  `Account` row was created for that account, and that a `LoginAttempt` row (`allowed: false`)
+  for that login now appears in the admin UI's "Recent sign-in activity" table despite no
+  matching `AllowedLogin` row existing.
+- Deactivate a previously-allowed test login via the UI's Activate/Deactivate button; confirm a
+  subsequent sign-in attempt from that account is now rejected (same as a never-allowlisted
+  account), and that its `AllowedLogin` row (`addedAt`, `note`) is still visible in the UI rather
+  than gone. Reactivate it and confirm sign-in succeeds again without re-entering the username.
+- Confirm the existing local `pnpm dev` flow (against the original localhost OAuth app) still
+  works unmodified — this phase must not break local development.
+- Confirm admin-gated actions (NRDB sync) still require `role === "ADMIN"` for a signed-in,
+  allowlisted, non-admin test account — the allowlist must not accidentally grant admin.
+- Confirm `/admin/allowlist` itself is inaccessible (inline "Access denied", matching
+  `/admin/sync`'s behavior) to a signed-in, allowlisted, non-admin account, and that its nav
+  link is absent from the site header for that account.
+- After a host reboot (or `tailscale down` / `tailscale up`), confirm the Funnel URL is still
+  live without manually re-running `tailscale funnel` — the actual point of using `-bg` in
+  section 4.
