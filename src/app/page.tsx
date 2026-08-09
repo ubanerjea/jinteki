@@ -82,7 +82,10 @@ export default async function Home() {
             Browse Cards
           </Link>
           <Link
-            href="/decklists"
+            // PHASE_8_PLAN.md item 6: mirrors "Browse Cards" -> /cards/advanced
+            // exactly. /decklists (the quick-views landing page, unchanged
+            // here) still has its own "Search" link to reach the same form.
+            href="/decklists/advanced"
             className="flex h-12 w-40 items-center justify-center rounded-full border border-solid border-black/[.08] transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
           >
             Browse Decklists
@@ -95,7 +98,7 @@ export default async function Home() {
           </Link>
         </div>
         <p className="-mt-4 text-sm text-zinc-500">
-          Browse Cards opens the advanced search form.
+          Browse Cards / Browse Decklists open their advanced search forms.
         </p>
 
         <div className="flex flex-col items-center gap-3">

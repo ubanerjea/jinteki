@@ -86,10 +86,22 @@ model Card {
 // ---------------------------------------------------------------------------
 
 model Decklist {
-  id           String   @id
+  id           String    @id
   name         String
   identityCode String
-  raw          Json
+  // Promoted out of `raw` in Phase 8 (PHASE_8_PLAN.md item 1) so /decklists'
+  // quick-view tabs can sort/filter ~74k+ rows without a per-request JSONB
+  // extraction. Nullable, not backfill-blocking-required - mirrors
+  // Format.description's precedent for a column a sync run populates rather
+  // than one that must be non-null from row one. `nrdbUserId` is a String,
+  // confirmed live against real synced rows (`raw->'attributes'->>'user_id'`
+  // is `jsonb_typeof` "string" - NRDB's own username, e.g. "Nergaal", not a
+  // numeric id), matching `DecklistAttributes.user_id: string | null` in
+  // src/lib/nrdb/types.ts.
+  createdAt  DateTime?
+  updatedAt  DateTime?
+  nrdbUserId String?
+  raw        Json
 
   identity Card           @relation(fields: [identityCode], references: [code])
   cards    DecklistCard[]
@@ -98,6 +110,8 @@ model Decklist {
 
   // See Card's matching comment above.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Decklist_name_trgm_idx")
+  @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model DecklistCard {

@@ -1,6 +1,7 @@
-// Pure pagination math shared by searchCards/searchDecklists - no DB access,
-// so this is safe to unit-test without a Postgres connection (unlike the
-// trigram-ranking behavior in cards.ts/decklists.ts, which does need one).
+// Pure pagination math shared by every search/query-layer module (cards.ts,
+// cards-advanced.ts, decklists.ts, decklists-advanced.ts, rule-sections.ts)
+// - no DB access, so this is safe to unit-test without a Postgres connection
+// (unlike the trigram-ranking behavior in those files, which does need one).
 
 import type { PagedResult } from "./types";
 

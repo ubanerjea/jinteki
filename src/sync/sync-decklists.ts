@@ -46,6 +46,15 @@ export function mapDecklist(
     id,
     name: attributes.name,
     identityCode: attributes.identity_card_id,
+    // PHASE_8_PLAN.md item 1: keeps the promoted createdAt/updatedAt/
+    // nrdbUserId columns current on every future sync (incremental or
+    // full), not just the one-time migration backfill. created_at/
+    // updated_at are full ISO-8601 datetimes with a timezone offset -
+    // `new Date(...)` parses that natively, matching the migration's
+    // `::timestamptz` cast.
+    createdAt: attributes.created_at ? new Date(attributes.created_at) : null,
+    updatedAt: attributes.updated_at ? new Date(attributes.updated_at) : null,
+    nrdbUserId: attributes.user_id ?? null,
     raw: JSON.parse(JSON.stringify(resource)) as Prisma.InputJsonValue,
   };
 }

@@ -1,8 +1,9 @@
 // Shared types for the search query layer (src/lib/search/*).
 //
-// Both `searchCards` and `searchDecklists` return a `PagedResult<T>` so page
-// components can render results + pagination controls the same way
-// regardless of which entity is being searched.
+// Every search/query function (searchCards, searchCardsAdvanced,
+// searchDecklistsByTab, searchDecklistsAdvanced, ...) returns a
+// `PagedResult<T>` so page components can render results + pagination
+// controls the same way regardless of which entity is being searched.
 
 export interface PagedResult<T> {
   items: T[];

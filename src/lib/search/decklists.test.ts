@@ -1,164 +1,185 @@
 // Integration tests against the real, already-synced Postgres database
 // (~74k decklists). See cards.test.ts's header comment for why this needs a
 // real DB connection rather than fixtures.
+//
+// The old searchDecklists()/parseDecklistSearchParams() tests are gone along
+// with the code they tested (PHASE_8_PLAN.md item 7/8) - this file now
+// covers the four quick-view tab queries instead.
 
 import { afterAll, describe, expect, it } from "vitest";
 
 import { prisma } from "@/lib/prisma";
 
-import { parseDecklistSearchParams, searchDecklists } from "./decklists";
+import {
+  parseDecklistTab,
+  searchDecklistsByTab,
+  type DecklistTab,
+} from "./decklists";
 
 afterAll(async () => {
   await prisma.$disconnect();
 });
 
-describe("parseDecklistSearchParams", () => {
-  it("trims and drops blank values to undefined", () => {
-    const result = parseDecklistSearchParams({
-      q: "  NBN Rush  ",
-      identity: "",
-    });
-    expect(result.q).toBe("NBN Rush");
-    expect(result.identity).toBeUndefined();
+describe("parseDecklistTab", () => {
+  it("defaults to 'recent' when no tab param is present", () => {
+    expect(parseDecklistTab({})).toBe("recent");
   });
 
-  it("defaults page to 1 and pageSize to the default when absent", () => {
-    const result = parseDecklistSearchParams({});
-    expect(result.page).toBe(1);
-    expect(result.pageSize).toBe(30);
+  it("accepts each of the four real tab values", () => {
+    for (const tab of ["recent", "updated", "week", "favorited"]) {
+      expect(parseDecklistTab({ tab })).toBe(tab);
+    }
+  });
+
+  it("falls back to 'recent' for an unrecognized value", () => {
+    expect(parseDecklistTab({ tab: "popular" })).toBe("recent");
+    expect(parseDecklistTab({ tab: "hottopics" })).toBe("recent");
+    expect(parseDecklistTab({ tab: "halloffame" })).toBe("recent");
   });
 });
 
-describe("searchDecklists (real DB)", () => {
-  it("an empty query lists results rather than erroring or returning nothing", async () => {
-    const result = await searchDecklists({});
-    expect(result.items.length).toBeGreaterThan(0);
-    expect(result.total).toBeGreaterThan(70000); // ~74k decklists synced
-  });
-
-  it('searching "NBN Rush" returns a decklist literally named that', async () => {
-    const result = await searchDecklists({ q: "NBN Rush", pageSize: 50 });
-    expect(result.items.map((d) => d.name)).toContain("NBN Rush");
-  });
-
-  it("a typo'd search still returns something reasonable", async () => {
-    const result = await searchDecklists({ q: "NBN Rsh", pageSize: 50 });
-    expect(result.items.length).toBeGreaterThan(0);
-    expect(
-      result.items.some((d) => d.name.toLowerCase().includes("rush")),
-    ).toBe(true);
-  });
-
-  // plans/SEARCH_MATCHING.md: word_similarity('rush', 'Crushed Fingers') =
-  // 0.4, below the 0.6 word_similarity_threshold, so this specific case only
-  // matches via the ILIKE substring fallback, not `<%` alone - pinning it
-  // guards that fallback, not just the primary word_similarity path. Note
-  // this is deliberately *not* the "rsh" typo case: "rush" here is a clean
-  // substring of a longer word, which is the documented gap `%`-only
-  // matching used to miss; "rsh" (a dropped-letter typo) is a separate,
-  // accepted gap that no substring technique here is meant to solve.
-  it('a whole word matches as a substring of a longer word ("rush" -> "Crushed Fingers")', async () => {
-    // Plain q="rush" alone returns 673 matches on the real dataset (per
-    // plans/SEARCH_MATCHING.md) with "Crushed Fingers" scoring only 0.4
-    // (below the word_similarity threshold, an ILIKE-only match) - it ranks
-    // deep in that list, past MAX_PAGE_SIZE. Narrow with the identity filter
-    // (same pattern as the other identity-filter tests above) so the
-    // pinned row is reachable within a single page without asserting
-    // anything about its rank.
-    const result = await searchDecklists({
-      q: "rush",
-      identity: "pravdivost_consulting_political_solutions",
-      pageSize: 50,
+describe("searchDecklistsByTab (real DB)", () => {
+  describe("recent", () => {
+    it("lists results and matches the real total row count", async () => {
+      const directCount = await prisma.decklist.count();
+      const result = await searchDecklistsByTab({ tab: "recent" });
+      expect(result.items.length).toBeGreaterThan(0);
+      expect(result.total).toBe(directCount);
     });
-    expect(result.items.map((d) => d.name)).toContain("Crushed Fingers");
+
+    it("sorts strictly newest-first by createdAt", async () => {
+      const result = await searchDecklistsByTab({ tab: "recent", pageSize: 50 });
+      for (let i = 1; i < result.items.length; i++) {
+        const prev = result.items[i - 1].createdAt;
+        const cur = result.items[i].createdAt;
+        expect(prev).not.toBeNull();
+        expect(cur).not.toBeNull();
+        expect((prev as Date).getTime()).toBeGreaterThanOrEqual(
+          (cur as Date).getTime(),
+        );
+      }
+    });
+
+    it("matches a direct psql-equivalent ORDER BY against the real top row", async () => {
+      const direct = await prisma.decklist.findFirst({
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      const result = await searchDecklistsByTab({ tab: "recent", pageSize: 1 });
+      expect(result.items[0]?.id).toBe(direct?.id);
+    });
   });
 
-  it("identity filter matches a direct count and every row has that identity", async () => {
-    const directCount = await prisma.decklist.count({
-      where: { identityCode: "nbn_the_world_is_yours" },
+  describe("updated", () => {
+    it("sorts strictly newest-first by updatedAt, a genuinely different order from recent", async () => {
+      const result = await searchDecklistsByTab({ tab: "updated", pageSize: 50 });
+      for (let i = 1; i < result.items.length; i++) {
+        const prev = result.items[i - 1].updatedAt;
+        const cur = result.items[i].updatedAt;
+        expect((prev as Date).getTime()).toBeGreaterThanOrEqual(
+          (cur as Date).getTime(),
+        );
+      }
+
+      const direct = await prisma.decklist.findFirst({
+        orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+        select: { id: true },
+      });
+      expect(result.items[0]?.id).toBe(direct?.id);
     });
-    const result = await searchDecklists({
-      identity: "nbn_the_world_is_yours",
-      pageSize: 100,
-    });
-    expect(result.total).toBe(directCount);
-    expect(
-      result.items.every((d) => d.identityCode === "nbn_the_world_is_yours"),
-    ).toBe(true);
   });
 
-  it("each result includes the joined identity title", async () => {
-    const result = await searchDecklists({
-      identity: "nbn_the_world_is_yours",
-      pageSize: 1,
+  describe("week", () => {
+    it("only includes decklists created in the last 7 days, matching a direct count", async () => {
+      const directCount = await prisma.decklist.count({
+        where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+      });
+      const result = await searchDecklistsByTab({ tab: "week", pageSize: 1 });
+      expect(result.total).toBe(directCount);
+      // Every returned row (if any) really falls inside the window.
+      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const full = await searchDecklistsByTab({ tab: "week", pageSize: 100 });
+      expect(
+        full.items.every(
+          (d) => d.createdAt !== null && (d.createdAt as Date).getTime() >= weekAgo,
+        ),
+      ).toBe(true);
     });
-    expect(result.items[0]?.identityTitle).toBeTruthy();
   });
 
-  it("paginates correctly: page 2 continues where page 1 left off, no overlap", async () => {
-    const pageSize = 25;
-    const page1 = await searchDecklists({ page: 1, pageSize });
-    const page2 = await searchDecklists({ page: 2, pageSize });
-    expect(page1.items).toHaveLength(pageSize);
-    expect(page2.items).toHaveLength(pageSize);
-    const page1Ids = new Set(page1.items.map((d) => d.id));
-    const overlap = page2.items.filter((d) => page1Ids.has(d.id));
-    expect(overlap).toHaveLength(0);
+  describe("favorited", () => {
+    it("empty state: 0 DecklistFavorite rows -> 0 results, not an error", async () => {
+      const favoriteRows = await prisma.decklistFavorite.count();
+      expect(favoriteRows).toBe(0); // today's real, default state
+      const result = await searchDecklistsByTab({ tab: "favorited" });
+      expect(result.total).toBe(0);
+      expect(result.items).toHaveLength(0);
+    });
+
+    it("with real DecklistFavorite rows inserted, returns exactly those decklists with correct counts", async () => {
+      // Uses two real, already-synced decklist rows and the real, already-
+      // shipped ADMIN user (unmeel@gmail.com) so this exercises the real FK
+      // relationships, not fixture ids - matching this project's no-mocking
+      // convention. Two distinct users favorite the same decklist so its
+      // favoriteCount (2) genuinely differs from the other's (1), pinning
+      // the GROUP BY/count/ORDER BY together rather than just "some row
+      // showed up."
+      const user = await prisma.user.findUniqueOrThrow({
+        where: { email: "unmeel@gmail.com" },
+        select: { id: true },
+      });
+      const decklists = await prisma.decklist.findMany({
+        take: 2,
+        select: { id: true },
+        orderBy: { id: "asc" },
+      });
+      expect(decklists.length).toBe(2);
+      const [popular, single] = decklists;
+
+      // A second, throwaway user row - DecklistFavorite's PK is
+      // (userId, decklistId), so a second favorite on the *same* decklist
+      // needs a second distinct user.
+      const secondUser = await prisma.user.create({
+        data: { email: "phase8-test-second-favoriter@example.invalid" },
+      });
+
+      try {
+        await prisma.decklistFavorite.createMany({
+          data: [
+            { userId: user.id, decklistId: popular.id },
+            { userId: secondUser.id, decklistId: popular.id },
+            { userId: user.id, decklistId: single.id },
+          ],
+        });
+
+        const result = await searchDecklistsByTab({ tab: "favorited", pageSize: 10 });
+        expect(result.total).toBe(2);
+        const byId = new Map(result.items.map((d) => [d.id, d.favoriteCount]));
+        expect(byId.get(popular.id)).toBe(2);
+        expect(byId.get(single.id)).toBe(1);
+        // Higher favoriteCount sorts first.
+        expect(result.items[0]?.id).toBe(popular.id);
+      } finally {
+        await prisma.decklistFavorite.deleteMany({
+          where: { decklistId: { in: [popular.id, single.id] } },
+        });
+        await prisma.user.delete({ where: { id: secondUser.id } });
+        // Left as found: 0 rows again.
+        expect(await prisma.decklistFavorite.count()).toBe(0);
+      }
+    });
   });
 
-  it("total-count matches a direct SELECT count(*) with the same filter", async () => {
-    const directCount = await prisma.decklist.count({
-      where: { identityCode: "whizzard_master_gamer" },
-    });
-    const result = await searchDecklists({
-      identity: "whizzard_master_gamer",
-      pageSize: 1,
-    });
-    expect(result.total).toBe(directCount);
-  });
-
-  it("the last page has the correct remainder", async () => {
-    const pageSize = 40;
-    const directCount = await prisma.decklist.count({
-      where: { identityCode: "nbn_the_world_is_yours" },
-    });
-    const lastPage = Math.ceil(directCount / pageSize);
-    const expectedRemainder = directCount - (lastPage - 1) * pageSize;
-    const result = await searchDecklists({
-      identity: "nbn_the_world_is_yours",
-      page: lastPage,
-      pageSize,
-    });
-    expect(result.items).toHaveLength(expectedRemainder);
-    expect(result.totalPages).toBe(lastPage);
-  });
-
-  // PHASE_4_PLAN.md verification requirement: confirm the planner actually
-  // uses the pg_trgm GIN index (Decklist_name_trgm_idx) at this row count,
-  // rather than a sequential scan over ~74k rows. Encoded as a real,
-  // automated regression test (not just a one-off manual `psql EXPLAIN`,
-  // though that was also run - see agent-reports/phase-4.md) so a future
-  // change that accidentally defeats the index (e.g. wrapping `name` in a
-  // function) gets caught by `pnpm test`.
-  //
-  // Query shape updated for plans/SEARCH_MATCHING.md's `<%`/ILIKE change
-  // (this test previously pinned the pre-change `%`/similarity() query,
-  // which searchDecklists() no longer issues - a stale EXPLAIN target
-  // wouldn't have caught a real regression in the actual query path).
-  // Confirmed directly via psql that both conditions still hit the same
-  // index via a BitmapOr (`Decklist_name_trgm_idx` scanned once for the
-  // `%>` word-similarity condition, once for the `ILIKE` condition).
-  it("the name-search query plan uses the trigram GIN index, not a sequential scan", async () => {
-    const rows = await prisma.$queryRaw<{ "QUERY PLAN": string }[]>`
-      EXPLAIN SELECT d.id, d.name, d."identityCode" AS "identityCode", c.title AS "identityTitle"
-      FROM "Decklist" d
-      JOIN "Card" c ON c.code = d."identityCode"
-      WHERE ('NBN Rush' <% d.name OR d.name ILIKE '%NBN Rush%')
-      ORDER BY word_similarity('NBN Rush', d.name) DESC, d.name ASC
-      LIMIT 30 OFFSET 0
-    `;
-    const planText = rows.map((r) => r["QUERY PLAN"]).join("\n");
-    expect(planText).toContain("Decklist_name_trgm_idx");
-    expect(planText).not.toContain('Seq Scan on "Decklist"');
+  it("paginates correctly across tabs: page 2 continues where page 1 left off, no overlap", async () => {
+    for (const tab of ["recent", "updated"] as DecklistTab[]) {
+      const pageSize = 25;
+      const page1 = await searchDecklistsByTab({ tab, page: 1, pageSize });
+      const page2 = await searchDecklistsByTab({ tab, page: 2, pageSize });
+      expect(page1.items).toHaveLength(pageSize);
+      expect(page2.items).toHaveLength(pageSize);
+      const page1Ids = new Set(page1.items.map((d) => d.id));
+      const overlap = page2.items.filter((d) => page1Ids.has(d.id));
+      expect(overlap).toHaveLength(0);
+    }
   });
 });
