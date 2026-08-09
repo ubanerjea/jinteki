@@ -296,12 +296,20 @@ this list blindly):
 - **Popular / Hall of Fame / Hot Topics / Tournaments / Decklist of the Week's curation half** —
   see the Divergence section above. Not a gap to close later without new information; would need
   NRDB to expose data it currently does not.
-- **Format/legality filtering** (NRDB's Rotation / Tournament Legal / Most Wanted List fields).
-  The research flagged this as "plausible given Phase 6's `Format`/`Restriction` models, but its
-  own scoping item, not bundled for free" — real MWL-legality checking (every card in a deck
-  clean under a given restriction snapshot, with point limits) is a materially bigger, genuinely
-  new computation, not a simple equality filter like everything else in this phase, and building
-  it wrong would silently mislead rather than just underdeliver. Left for a dedicated future phase.
+- **True MWL/Tournament-Legal deck-wide legality filtering** (NRDB's Rotation / Tournament Legal /
+  Most Wanted List fields, in their full sense: no banned card present, the sum of "points" cards
+  under the active `Restriction.point_limit` budget, `universal_faction_cost`/influence handling,
+  `global_penalty` rules). Confirmed, post-launch, to still be a materially bigger, genuinely new
+  computation than anything else in this phase — real game-rules aggregation across a whole deck,
+  not a simple per-card equality/containment filter, and building it wrong would silently mislead
+  rather than just underdeliver. `src/lib/restrictions.ts`'s `computeCardLegality()` already does
+  the *per-card* version (used on `/cards/[code]`) but nothing aggregates that deck-wide today.
+  Left for a dedicated future session, per explicit instruction (2026-08-08) — do not build this
+  without a fresh design pass on the points-budget/global-penalty rules. **Card-pool-membership**
+  Format filtering (a much lighter, different question — "is every card in this deck a member of
+  Format X's pool at all," the same semantics `/cards/advanced`'s own Format filter already uses)
+  was *not* part of this gap — see the Addendum below, added the same day after the repo owner
+  asked why Format was missing from `/decklists/advanced`.
 - **`Decklist.raw`'s `notes` field** — confirmed real and unused by this research
   (`decklist-search-quickviews-research.md` §3), but showing it on `/decklists/[id]` is a detail
   page enhancement, not part of this phase's search/quick-views scope. Worth a quick follow-up,
@@ -362,3 +370,78 @@ verification time, since the dataset grows via ongoing syncs — don't treat 742
   HTML and the `order`/sort option arrays in source for "popular"/"likes"/"reputation" — none
   should appear anywhere, confirming the divergence in this plan was actually built as specified,
   not partially.
+
+---
+
+## Addendum (2026-08-08): Format (card-pool membership) filter
+
+Added after Phase 8 shipped, in response to the repo owner asking why `/decklists/advanced` has no
+Format filter at all. Answer, worked out live: "Format" was hiding two different questions, only
+one of which is cheap. This addendum builds the cheap one; the "Explicitly deferred" section above
+was rewritten the same day to describe the other, harder one precisely, and it is **not** built by
+this addendum.
+
+**What this adds**: "is every card in this deck a member of Format X's current card pool" —
+**not** legality (a card can be pool-member and still banned/pointed under the active
+`Restriction`; this filter says nothing about that, same honest limitation
+`/cards/advanced`'s own Format row already states in its hint: "Cards in that format's card pool,
+not just those currently legal in it"). Reuses that exact same `format_ids` JSONB-containment
+check (`src/lib/search/cards.ts`, the `format` facet condition) against every card in the deck,
+the same per-card `EXISTS`/`NOT EXISTS`-over-`DecklistCard` shape this phase already used three
+times (pack, cards-used, cards-excluded) — genuinely the same pattern a fourth time, not new
+infrastructure.
+
+### Query engine (`src/lib/search/decklists-advanced.ts`)
+
+- `AdvancedDecklistSearchParams` gains `format?: string`.
+- One condition, deck-wide "no card fails membership":
+  ```ts
+  if (params.format) {
+    conditions.push(Prisma.sql`
+      NOT EXISTS (
+        SELECT 1 FROM "DecklistCard" dc
+        JOIN "Card" cc ON cc.code = dc."cardCode"
+        WHERE dc."decklistId" = d.id
+          AND NOT ((cc.raw->'attributes'->'format_ids') @> to_jsonb(${params.format}::text))
+      )
+    `);
+  }
+  ```
+  Deliberately includes the identity too (`DecklistCard` rows cover every card slot including the
+  identity, per Phase 4's own finding that NRDB's `card_slots` includes it) — a deck whose identity
+  isn't in the format's pool isn't a member of that format, matching how a real player would judge
+  it.
+- `parseAdvancedDecklistSearchParams()`: `format: firstParam(input, "format")?.trim() || undefined`
+  — single-valued, matching `/cards/advanced`'s own Format field (not a multi-picker; "any format"
+  is the unset default, same as everywhere else this pattern is used).
+
+### Form (`src/app/decklists/advanced/page.tsx`)
+
+One new `Row`, placed directly after Side (mirroring `/cards/advanced`'s own row order — Format
+sits after Side there too): a plain `<select>` populated by the same `prisma.format.findMany()`
+call the page already runs for nothing else yet, labeled "Format," with the **identical hint
+text** `/cards/advanced` uses: "Cards in that format's card pool, not just those currently legal
+in it." — reusing the exact wording is deliberate, not laziness: it is the same honest caveat,
+about the same underlying data, and inventing different wording for an identical limitation would
+only risk the two pages disagreeing over time.
+
+### Results page
+
+Add `format` to the read-only active-filter summary line, same as every other facet there.
+
+### Testing
+
+`decklists-advanced.test.ts` gains: a real-DB test that `?format=standard` returns a strict subset
+of the unfiltered total, cross-checked against a direct `psql` query using the identical
+`NOT EXISTS`/JSONB-containment shape (independently written, not copy-pasted from the
+implementation, matching this phase's existing testing discipline); a test that a decklist whose
+*identity* alone fails membership is correctly excluded (not just non-identity cards); and a
+parsing test that a blank/absent `format` param filters nothing.
+
+### Verification
+
+Same standards as the rest of this phase (typecheck/lint/tests, dev boot+curl, separate production
+build+start+curl). Phase-specific: compute the real `?format=standard` count via a fresh `psql`
+query at build/verify time (do not reuse any number written in this addendum, none is given here
+on purpose) and confirm the live HTTP response matches exactly; confirm the hint text is verbatim
+identical to `/cards/advanced`'s own Format row hint (a literal string diff, not "looks similar").

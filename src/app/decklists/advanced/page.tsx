@@ -64,7 +64,7 @@ export default async function AdvancedDecklistSearchPage({
   const rawParams = await searchParams;
   const params = parseAdvancedDecklistSearchParams(rawParams);
 
-  const [prefixOptions, packs, identities, cards] = await Promise.all([
+  const [prefixOptions, packs, identities, cards, formats] = await Promise.all([
     getPrefixOptions(),
     prisma.pack.findMany({ orderBy: { name: "asc" } }),
     // Only identities actually used by at least one decklist - the same
@@ -84,6 +84,9 @@ export default async function AdvancedDecklistSearchPage({
       select: { code: true, title: true },
       orderBy: { title: "asc" },
     }),
+    // Same prisma.format.findMany() call /cards/advanced's own Format row
+    // already uses - nothing new (addendum, 2026-08-08).
+    prisma.format.findMany({ orderBy: { name: "asc" } }),
   ]);
 
   const packOptions: FacetOption[] = packs.map((p) => ({
@@ -182,6 +185,32 @@ export default async function AdvancedDecklistSearchPage({
             {prefixOptions.side.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
+              </option>
+            ))}
+          </select>
+        </Row>
+
+        {/* Card-pool-membership Format filter (addendum, 2026-08-08) - placed
+            directly after Side, mirroring /cards/advanced's own row order.
+            Hint text is verbatim identical to /cards/advanced's Format row
+            hint (src/app/cards/advanced/page.tsx) - the same honest caveat,
+            about the same underlying data ("every card in this deck a member
+            of the format's card pool," not legality). */}
+        <Row
+          label="Format"
+          htmlFor="adv-format"
+          hint="Cards in that format's card pool, not just those currently legal in it."
+        >
+          <select
+            id="adv-format"
+            name="format"
+            defaultValue={params.format ?? ""}
+            className={INPUT_CLASS}
+          >
+            <option value="">Any format</option>
+            {formats.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
               </option>
             ))}
           </select>

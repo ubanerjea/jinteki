@@ -83,6 +83,7 @@ export default async function AdvancedDecklistResultsPage({
     summaryParts.push(`Faction ${params.faction.map(formatCode).join(", ")}`);
   }
   if (params.side) summaryParts.push(`Side ${formatCode(params.side)}`);
+  if (params.format) summaryParts.push(`Format ${formatCode(params.format)}`);
   if (params.pack.length) {
     summaryParts.push(`Pack ${params.pack.map(formatCode).join(", ")}`);
   }

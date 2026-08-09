@@ -343,3 +343,181 @@ For each of dev and production, independently:
 
 No changes to `.env`, no new environment variables, no `git add`/`commit`/`push` performed — the
 working tree is left with these changes present but uncommitted, per the task instructions.
+
+---
+
+## Addendum (2026-08-08): Format filter — build report
+
+Built against `plans/PHASE_8_PLAN.md`'s "Addendum (2026-08-08): Format (card-pool membership)
+filter" section — the only authoritative spec for this task. Scope, exactly as specified: a
+single-valued `format` filter on `/decklists/advanced`, "every card in this deck (including the
+identity) is a member of Format X's card pool," reusing `cards.ts`'s own `format_ids` JSONB-
+containment check. **Not built** (per the addendum and the plan's revised "Explicitly deferred"
+section, both read first): true MWL/Tournament-Legal deck-wide legality (banned cards, points
+budget, `global_penalty`) — that remains out of scope for a dedicated future session.
+
+### What was built, file by file
+
+- **`src/lib/search/decklists-advanced.ts`**
+  - `AdvancedDecklistSearchParams` gains `format?: string`.
+  - `parseAdvancedDecklistSearchParams()` gains `const format = firstParam(input, "format")?.trim();`
+    and `format: format ? format : undefined` in the returned object — single-valued, blank/absent
+    → `undefined` (filters nothing), matching every other single-valued field in this parser.
+  - `searchDecklistsAdvanced()` gains one condition, placed after `authorId` and before the
+    `whereSql` assembly, using the **exact** SQL shape given in the addendum verbatim (not a
+    paraphrase):
+    ```ts
+    if (params.format) {
+      conditions.push(Prisma.sql`
+        NOT EXISTS (
+          SELECT 1 FROM "DecklistCard" dc
+          JOIN "Card" cc ON cc.code = dc."cardCode"
+          WHERE dc."decklistId" = d.id
+            AND NOT ((cc.raw->'attributes'->'format_ids') @> to_jsonb(${params.format}::text))
+        )
+      `);
+    }
+    ```
+    This is the fourth per-card `EXISTS`/`NOT EXISTS`-over-`DecklistCard` condition in this file
+    (after pack, cardsUsed, cardsExcluded) — no new query infrastructure, exactly as the addendum
+    said it would be. `DecklistCard` rows include the identity slot (Phase 4's finding), so the
+    identity is deck-wide-checked automatically, not as a special case.
+
+- **`src/app/decklists/advanced/page.tsx`**
+  - `prisma.format.findMany({ orderBy: { name: "asc" } })` added to the page's existing
+    `Promise.all` (same call `/cards/advanced`'s page already makes for its own Format row — no new
+    query pattern).
+  - One new `Row`, placed directly after the Side row and before the Pack row (confirmed by byte
+    offset in the rendered HTML — see Verification), labeled "Format", a plain `<select>` populated
+    from `formats`, with `<option value="">Any format</option>` as the unset default (matching
+    `/cards/advanced`'s own "Any format" wording) and hint text copied character-for-character from
+    `src/app/cards/advanced/page.tsx` line 270 (read directly, not from memory or paraphrase):
+    `"Cards in that format's card pool, not just those currently legal in it."`
+
+- **`src/app/decklists/advanced/results/page.tsx`**
+  - One line added to the read-only active-filter summary, in the same style every other facet on
+    this page already uses: `if (params.format) summaryParts.push(\`Format ${formatCode(params.format)}\`);`
+    placed after Side and before Pack, mirroring the form's own row order. (This page builds its
+    summary line manually with `formatCode()`, unlike `/cards/advanced/results` which uses a shared
+    `describeFacets()`/`formatFacetSummary()` helper — this file never used that helper for any of
+    its other facets either, so `format` follows this file's own established pattern rather than
+    importing a different one solely for this addendum.)
+
+- **`src/lib/search/decklists-advanced.test.ts`** — three additions, matching the addendum's
+  Testing subsection exactly:
+  1. Parsing tests (no DB): blank/absent `format` → `undefined` (tested via `{}`, `{format: ""}`,
+     `{format: "  "}`), plus a trim test (`"  standard  "` → `"standard"`).
+  2. A real-DB test that `?format=standard` returns a strict subset of the unfiltered total,
+     cross-checked against a **deliberately differently-shaped** direct query (a `NOT IN` over a
+     plain subquery, not a copy of the implementation's correlated `NOT EXISTS`) — an independent
+     derivation of the same semantics, per the addendum's explicit "independently written, not
+     copy-pasted" instruction.
+  3. A real-DB test that a decklist whose *identity alone* fails membership is excluded, using
+     `boris_syfr_kovac_crafty_veteran` (an identity confirmed live to lack `"standard"` in its
+     `format_ids`, used as the identity on 3 real decklists) — asserts `?identity=boris...&format=
+     standard` returns 0 rows even though nothing was said about that identity's non-identity cards.
+
+### Deviation, flagged (test performance, not scope)
+
+One test-writing wrinkle, not a product bug: the addendum's "independently-shaped, not copy-pasted"
+oracle query (`NOT IN` over a subquery joining all 1,783,436 `DecklistCard` rows) took **~7.3s** in
+`psql`, versus the production code's correlated `NOT EXISTS` at **~74ms** — Postgres can't apply the
+same per-decklist short-circuit to the `NOT IN` shape. This isn't a regression in the shipped code
+(the fast path is what actually runs in the app); it only affects this one test's own runtime. Fixed
+by giving that single test a 15000ms timeout (Vitest's default is 5000ms) rather than weakening the
+oracle back into a copy of the implementation, which would have defeated the point of writing it
+independently. Flagged here rather than silently raised.
+
+### Verification
+
+All commands below were run for real against this session's live environment (existing dev server
+already running on port 3000, confirmed serving jinteki and picking up hot-reloaded changes; a
+**separate** production build+start on port 3099, stopped afterward) — not self-reported without
+evidence.
+
+**Typecheck / lint / tests**
+- `pnpm exec tsc --noEmit` → clean, no output.
+- `pnpm lint` → clean, no output.
+- `pnpm test` → **272 passed, 0 failed** (20 test files; up from Phase 8's original 268, the +4 new
+  format tests).
+
+**Real `?format=standard` count, computed fresh (not copied from anywhere in this addendum, as
+instructed)**
+- Independently-written `psql` query, same `NOT EXISTS`/JSONB-containment shape as the
+  implementation:
+  ```sql
+  SELECT count(*) FROM "Decklist" d WHERE NOT EXISTS (
+    SELECT 1 FROM "DecklistCard" dc JOIN "Card" cc ON cc.code = dc."cardCode"
+    WHERE dc."decklistId" = d.id
+      AND NOT ((cc.raw->'attributes'->'format_ids') @> to_jsonb('standard'::text))
+  );
+  ```
+  → **73475** (out of 74242 total decklists — a genuine strict subset, 767 decks excluded).
+- A second, differently-shaped `psql` query (`NOT IN` over a plain subquery, the same shape used as
+  the test oracle) → **73475**, matching exactly.
+- Live HTTP, dev (port 3000): `GET /decklists/advanced/results?format=standard&pageSize=30` →
+  rendered count **73475** — exact match.
+- Live HTTP, **separately** under production (port 3099, fresh `next build` + `next start`):
+  `GET /decklists/advanced/results?format=standard&pageSize=30` → rendered count **73475** — exact
+  match, independently re-curled, not reused from the dev check.
+- Blank `format=` → rendered count **74242** (the live, unfiltered total) in both dev and
+  production — confirms the parsing test's "blank filters nothing" guarantee end-to-end, not just
+  at the parser-unit level.
+
+**Identity-alone-fails-membership, live**
+- `boris_syfr_kovac_crafty_veteran` confirmed via direct `psql` to lack `"standard"` in its
+  `format_ids`, and to be the identity on exactly 3 real decklists.
+- `GET /decklists/advanced/results?identity=boris_syfr_kovac_crafty_veteran&format=standard` →
+  rendered count **0**, "No decklists match this search." — in both dev and production,
+  independently re-curled in each.
+
+**Hint text — literal string diff, not "looks similar"**
+- Extracted the rendered hint text from both `/cards/advanced` and `/decklists/advanced`'s HTML via
+  the same `grep -o` pattern, wrote each to its own file, ran `diff` between them.
+- Dev: `diff` → no output, **IDENTICAL**.
+- Production (separately, re-fetched fresh, not reused from dev): `diff` → no output, **PROD HINT
+  IDENTICAL**.
+- Exact text confirmed on both sides: `"Cards in that format's card pool, not just those currently
+  legal in it."`
+
+**Row placement — after Side, before Pack**
+- Confirmed by byte offset of `adv-side` / `adv-format` / `name="pack"` in the rendered HTML (a
+  position-in-document check, not a visual guess): dev — 19796 < 20329 < 21347; production —
+  18869 < 19402 < 20420. Format sits between Side and Pack in both, matching `/cards/advanced`'s own
+  row order (Side, then Format, then Pack) as instructed.
+
+**No raw-SQL injection risk**
+- `grep -n 'queryRawUnsafe|executeRawUnsafe' src/lib/search/decklists-advanced.ts` → only the
+  file's pre-existing header comment mentions the term (explaining the rule); the new `format`
+  condition, like every other condition in this file, goes through a `Prisma.sql` tagged template.
+
+**Route health**
+- All touched/adjacent routes → `200` in both dev and production: `/decklists/advanced`,
+  `/decklists/advanced/results`, `/decklists/advanced/results?format=standard`,
+  `/decklists/advanced/results?format=`, `/decklists/advanced/results?identity=...&format=standard`.
+- `pnpm build` → `✓ Compiled successfully`, TypeScript pass included, all 19 routes listed
+  (unchanged route count — this addendum added no new routes, only a param on two existing ones).
+
+**Dataset left unchanged**
+- `SELECT count(*) FROM "Decklist"` → **74242** (unchanged). `SELECT count(*) FROM
+  "DecklistFavorite"` → **0** (unchanged). This addendum's tests are all read-only against the
+  format filter — no fixture rows were inserted or needed cleanup, unlike the original Phase 8
+  Favorited-tab tests.
+
+### Files touched
+
+- `src/lib/search/decklists-advanced.ts` (added `format` param, parsing, and query condition)
+- `src/lib/search/decklists-advanced.test.ts` (added parsing + 2 real-DB tests)
+- `src/app/decklists/advanced/page.tsx` (added Format row + `prisma.format.findMany()` fetch)
+- `src/app/decklists/advanced/results/page.tsx` (added Format to the active-filter summary)
+
+No schema/migration changes (this addendum needed none — `format_ids` already lives in `Card.raw`,
+reused as-is). No changes to `.env`. No `git add`/`commit`/`push` performed — the working tree is
+left with these changes present but uncommitted, per the task instructions.
+
+### Unresolved / left as-is
+
+- Nothing left unresolved within this addendum's own scope — every item in the addendum's Testing
+  and Verification subsections was executed with real, independently-computed evidence above.
+- True MWL/Tournament-Legal deck-wide legality filtering remains fully deferred, per the plan's
+  revised "Explicitly deferred" section — not started, not attempted, per explicit instruction.

@@ -40,6 +40,11 @@ export interface AdvancedDecklistSearchParams {
   cardsUsed?: string[];
   cardsExcluded?: string[];
   authorId?: string;
+  // Card-pool-membership Format filter (addendum, 2026-08-08) - "is every
+  // card in this deck (including the identity) a member of Format X's card
+  // pool," NOT true MWL/legality checking. Single-valued, matching
+  // /cards/advanced's own Format field (not a multi-picker).
+  format?: string;
   order?: string; // "name" | "date" - nothing engagement-based, ever
   page?: number | string;
   pageSize?: number | string;
@@ -79,6 +84,7 @@ export function parseAdvancedDecklistSearchParams(
   const identity = firstParam(input, "identity")?.trim();
   const side = firstParam(input, "side")?.trim();
   const authorId = firstParam(input, "authorId")?.trim();
+  const format = firstParam(input, "format")?.trim();
 
   const faction = allParams(input, "faction");
   const pack = allParams(input, "pack");
@@ -95,6 +101,7 @@ export function parseAdvancedDecklistSearchParams(
     cardsUsed,
     cardsExcluded,
     authorId: authorId ? authorId : undefined,
+    format: format ? format : undefined,
     order: validOrder(order),
     page: parsePage(firstParam(input, "page")),
     pageSize: parsePageSize(
@@ -195,6 +202,31 @@ export async function searchDecklistsAdvanced(
 
   if (params.authorId) {
     conditions.push(Prisma.sql`d."nrdbUserId" = ${params.authorId}`);
+  }
+
+  // Card-pool-membership Format filter (addendum, 2026-08-08): "is every
+  // card in this deck a member of Format X's current card pool" - NOT
+  // legality (a card can be pool-member and still banned/pointed under the
+  // active Restriction; this says nothing about that, same honest
+  // limitation /cards/advanced's own Format row states in its hint).
+  // Reuses the exact same format_ids JSONB-containment check cards.ts'
+  // buildFacetConditions() uses for its own `format` facet, against every
+  // card in the deck - a fourth instance of this phase's per-card
+  // EXISTS/NOT EXISTS-over-DecklistCard shape (pack, cardsUsed,
+  // cardsExcluded, now this), not new infrastructure. Deliberately includes
+  // the identity too (DecklistCard rows cover every card slot including the
+  // identity, per Phase 4's finding that NRDB's card_slots includes it) -
+  // a deck whose identity isn't in the format's pool isn't a member of that
+  // format either.
+  if (params.format) {
+    conditions.push(Prisma.sql`
+      NOT EXISTS (
+        SELECT 1 FROM "DecklistCard" dc
+        JOIN "Card" cc ON cc.code = dc."cardCode"
+        WHERE dc."decklistId" = d.id
+          AND NOT ((cc.raw->'attributes'->'format_ids') @> to_jsonb(${params.format}::text))
+      )
+    `);
   }
 
   const whereSql = conditions.length

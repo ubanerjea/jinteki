@@ -101,6 +101,22 @@ describe("parseAdvancedDecklistSearchParams", () => {
     });
   });
 
+  describe("format (card-pool membership, addendum 2026-08-08)", () => {
+    it("blank/absent format filters nothing", () => {
+      expect(parseAdvancedDecklistSearchParams({}).format).toBeUndefined();
+      expect(parseAdvancedDecklistSearchParams({ format: "" }).format).toBeUndefined();
+      expect(
+        parseAdvancedDecklistSearchParams({ format: "  " }).format,
+      ).toBeUndefined();
+    });
+
+    it("trims a real value", () => {
+      expect(
+        parseAdvancedDecklistSearchParams({ format: "  standard  " }).format,
+      ).toBe("standard");
+    });
+  });
+
   it("restricts pageSize to the set the form offers", () => {
     expect(parseAdvancedDecklistSearchParams({ pageSize: "60" }).pageSize).toBe(
       60,
@@ -284,6 +300,76 @@ describe("searchDecklistsAdvanced (real DB)", () => {
       });
       expect(result.total).toBe(directCount);
       expect(result.items.length).toBeLessThanOrEqual(41);
+    });
+  });
+
+  describe("format: card-pool membership, deck-wide (addendum, 2026-08-08)", () => {
+    it(
+      "format=standard returns a strict subset of the unfiltered total, cross-checked against an independently-shaped direct query",
+      async () => {
+        const total = await prisma.decklist.count();
+
+        // Deliberately written differently from the implementation's
+        // correlated NOT EXISTS (a NOT IN over a plain subquery instead) -
+        // an independent derivation of the same "no card in the deck fails
+        // format_ids containment" semantics, not a copy-paste of the
+        // production SQL, per the addendum's testing instruction. This
+        // shape can't short-circuit per-decklist the way the correlated
+        // NOT EXISTS does, so it's genuinely slower (~7s vs ~70ms in psql,
+        // confirmed live) - real work, not a hung query, hence the raised
+        // timeout below rather than simplifying it back into a copy of the
+        // implementation.
+        const oracle = await prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT count(*)::bigint AS count FROM "Decklist" d
+        WHERE d.id NOT IN (
+          SELECT dc."decklistId" FROM "DecklistCard" dc
+          JOIN "Card" cc ON cc.code = dc."cardCode"
+          WHERE NOT ((cc.raw->'attributes'->'format_ids') @> to_jsonb('standard'::text))
+        )
+      `;
+        const expected = Number(oracle[0].count);
+        expect(expected).toBe(73475); // pinned, cross-checked live in psql
+
+        const result = await searchDecklistsAdvanced({
+          format: "standard",
+          pageSize: 1,
+        });
+        expect(result.total).toBe(expected);
+        expect(result.total).toBeLessThan(total);
+      },
+      15000,
+    );
+
+    it("a decklist whose identity alone fails membership is excluded, not just non-identity cards", async () => {
+      // boris_syfr_kovac_crafty_veteran's format_ids does not contain
+      // "standard" (confirmed live in psql), and it is used as the identity
+      // on real decklists - the identity slot is a DecklistCard row too
+      // (Phase 4's finding that NRDB's card_slots includes the identity),
+      // so it must be enough on its own to fail the deck-wide check even if
+      // every other card in the deck passes.
+      const identityCode = "boris_syfr_kovac_crafty_veteran";
+
+      const identityCard = await prisma.card.findUniqueOrThrow({
+        where: { code: identityCode },
+        select: { raw: true },
+      });
+      const formatIds = (
+        identityCard.raw as { attributes?: { format_ids?: string[] } }
+      ).attributes?.format_ids;
+      expect(formatIds).not.toContain("standard");
+
+      const usingThisIdentity = await prisma.decklist.count({
+        where: { identityCode },
+      });
+      expect(usingThisIdentity).toBeGreaterThan(0);
+
+      const result = await searchDecklistsAdvanced({
+        identity: identityCode,
+        format: "standard",
+        pageSize: 10,
+      });
+      expect(result.total).toBe(0);
+      expect(result.items).toHaveLength(0);
     });
   });
 
