@@ -288,6 +288,13 @@ AUTH_SECRET=<fresh value from `npx auth secret` — NOT the local dev one>
 AUTH_TRUST_HOST=
 ```
 
+Generate that `AUTH_SECRET` value by running `npx auth secret` from the repo root — it prints a
+random value and, run interactively, offers to write it straight to `.env`; decline that and
+paste the printed value into `.env.remote` by hand instead, since the auto-write targets the
+wrong file here. Do this once: the same fresh value carries through section 4's
+placeholder-credential verification pass below and into section 6's real setup — it does not
+need regenerating once real GitHub OAuth credentials replace the placeholders.
+
 **Why self-contained, and the landmine this avoids**: Next.js's built-in env loader
 (`@next/env`) reads `.env`/`.env.production` from disk on every start *regardless* of what
 another tool already put in `process.env`, but a key already present in `process.env` wins over
@@ -352,6 +359,21 @@ Done on the machine currently running the port-3001 remote process (`pnpm start:
    name and tailnet name, not randomly generated — confirmed stable across restarts (Tailscale
    Funnel docs); it only changes if the device or tailnet is renamed, which is a deliberate
    owner action, not something that happens on its own.
+
+### commands to check tailscale, start and stop
+Check status:
+  tailscale funnel status
+Shows current Funnel configuration (which ports are exposed, to what).
+
+Stop it:
+  tailscale funnel --https=443 off
+
+Start it:
+  tailscale funnel -bg 3001
+
+Also use:
+  tailscale down
+  tailscale up
 
 ---
 
