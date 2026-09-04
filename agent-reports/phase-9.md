@@ -345,3 +345,45 @@ nothing broke: `pnpm test` → 279/279 passed across 21 files, `pnpm lint` → c
 succeeded with `/admin/allowlist` present in the route table, and `tsconfig.json` stayed clean
 (no diff) through that build. `tsconfig.json` is not part of this phase's actual file-change list —
 the modified-files set above should be read with that entry removed.
+
+---
+
+## Follow-up (2026-09-04): sections 5–6 completed by the owner, deferred verification resolved
+
+The repo owner completed the two operational steps this build explicitly could not attempt
+(plan §§5–6): installed Tailscale, ran `tailscale funnel -bg 3001`, and registered a second
+GitHub OAuth App pointed at the resulting Funnel URL.
+
+**Confirmed directly in this session**:
+
+- `tailscale funnel status` → Funnel on, `https://andromeda.tailcb2bd0.ts.net` proxying to
+  `http://127.0.0.1:3001`.
+- `curl http://localhost:3001` → `200` and `curl https://andromeda.tailcb2bd0.ts.net` → `200`,
+  confirmed at the same time — the `start:remote` process (port 3001) was actually up and the
+  public path reached it, not just that Funnel reported itself running.
+- `.env.remote` inspected (key names and non-secret values only, not secret contents): `AUTH_URL`
+  set to exactly `https://andromeda.tailcb2bd0.ts.net` (matching the live Funnel hostname), a
+  real-looking `AUTH_GITHUB_ID`, and `AUTH_GITHUB_SECRET`/`AUTH_SECRET`/`DATABASE_URL` all
+  present and non-empty.
+
+**Owner-verified** (not independently re-run by this session — the owner did these directly and
+reported both confirmed):
+
+- The GitHub OAuth App's Authorization callback URL matches
+  `https://andromeda.tailcb2bd0.ts.net/api/auth/callback/github` exactly.
+- A real sign-in through the public Funnel URL, from a genuinely separate machine off the LAN
+  (phone on cellular), succeeded end-to-end with the owner's allowlisted GitHub account.
+
+Together these close plan §7's "Deferred" subsection almost entirely: the allowlisted-sign-in-
+through-Funnel item and the AUTH_URL/AUTH_TRUST_HOST-against-a-real-hostname item are both now
+resolved (the successful sign-in is direct proof of the latter, not just the former). The
+non-allowlisted-account-via-Funnel item was **explicitly skipped by the owner's own decision**
+(2026-09-04) — not attempted, not a gap, a deliberate call not to spend a second real GitHub
+account verifying a deny-path that's already covered by real-DB tests and by the equivalent
+check against the local dev OAuth app. The reboot-survival item (`-bg` surviving a host reboot /
+`tailscale down`+`up`) remains untested — the Funnel has been running continuously since it was
+started, so it hasn't had an occasion to be exercised.
+
+Phase 9 is now functionally complete: all code from the original build pass plus this
+operational follow-up is in place and verified, aside from the one still-open reboot-survival
+check noted above.

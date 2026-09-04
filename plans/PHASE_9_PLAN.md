@@ -441,21 +441,33 @@ build pass, regardless of how thorough that pass is — they depend on infrastru
 (a live public Funnel URL, a registered OAuth app with real credentials) that only the repo
 owner can create, using their own GitHub and Tailscale accounts. **Not a gap in this phase's
 build/verify cycle — a hard boundary of what's testable before those manual steps exist.**
-Track these as explicit follow-ups once the owner completes sections 5–6, not as unresolved
-build work:
 
-- An allowlisted GitHub account signing in through the *actual* Funnel URL (not just the local
-  dev OAuth app) from a genuinely separate machine — confirms the public path works end-to-end,
-  not just that the gate logic is correct in isolation (already verified above).
-- A non-allowlisted GitHub account attempting the same, through the real Funnel URL.
+**Resolved 2026-09-04** (owner-verified directly, see `agent-reports/phase-9.md`'s follow-up
+section of the same date):
+
+- ✅ Sections 5–6 both complete: `tailscale funnel -bg 3001` running (`https://andromeda.tailcb2bd0.ts.net`
+  → `127.0.0.1:3001`, confirmed via `tailscale funnel status`), second GitHub OAuth App
+  registered with its callback URL pointed at this exact Funnel hostname, `.env.remote`
+  populated with the app's real `AUTH_GITHUB_ID`/`AUTH_GITHUB_SECRET`.
+- ✅ An allowlisted GitHub account signing in through the *actual* Funnel URL from a genuinely
+  separate, off-LAN machine — owner-confirmed working.
+- ✅ `AUTH_URL`/`AUTH_TRUST_HOST` behaving correctly against a real public hostname — the
+  successful sign-in above is direct end-to-end proof (Auth.js's redirect/callback handling
+  worked against `andromeda.tailcb2bd0.ts.net`, not just `localhost`), superseding the need for
+  a separate check.
+
+**Explicitly skipped, by owner decision (2026-09-04)** — not a gap, a deliberate choice not to
+spend a second real GitHub account on this:
+
+- A non-allowlisted GitHub account attempting sign-in through the real Funnel URL. The
+  underlying gate logic (deny path, `LoginAttempt` recording for never-allowlisted logins) is
+  already covered by real-DB tests (`check-allowed-login.test.ts`) and by the equivalent test
+  against the local dev OAuth app (`agent-reports/phase-9.md`'s original build pass) — only the
+  "through the real public URL, from a real second account" variant is being skipped.
+
+**Still open, not yet tested**:
+
 - After a host reboot (or `tailscale down` / `tailscale up`), confirming the Funnel URL is still
   live without manually re-running `tailscale funnel` — the actual point of using `-bg` in
-  section 5; meaningless to test before Funnel exists.
-- Confirming `AUTH_URL`/`AUTH_TRUST_HOST` behave correctly against a *real* public hostname
-  (not just the locally-verified env-precedence mechanism from section 4) — the local check
-  proves the right values reach `process.env`; it can't prove Auth.js's redirect/callback
-  handling is correct against a hostname that isn't `localhost`, since no such hostname exists
-  yet to test against.
-
-`agent-reports/phase-9.md` should reference this subsection by name once these steps are
-actually completed by the owner, rather than re-deriving a fresh checklist from scratch.
+  section 5. Untested as of 2026-09-04; the Funnel has been running continuously since it was
+  started, so this hasn't had an opportunity to be exercised yet.
