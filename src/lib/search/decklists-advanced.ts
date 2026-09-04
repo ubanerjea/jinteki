@@ -45,6 +45,20 @@ export interface AdvancedDecklistSearchParams {
   // pool," NOT true MWL/legality checking. Single-valued, matching
   // /cards/advanced's own Format field (not a multi-picker).
   format?: string;
+  // Rotation filter (PHASE_10_PLAN.md §3) - a single CardPool id (only ever
+  // one of Standard's seven numbered rotations, e.g. "rotation_2025"),
+  // mirroring NRDB classic-site's `rotation_id` dropdown. "Is every card in
+  // this deck a member of this specific card pool" - computed entirely from
+  // jinteki's own synced data (see decklist-legality.ts), since NRDB's own
+  // `filter[rotation_id]` 500s and isn't documented/supported.
+  rotation?: string;
+  // Tournament Legal filter (PHASE_10_PLAN.md §3) - "1" (Yes) | "0" (No) |
+  // unset (Ignore), mirroring NRDB classic-site's `is_legal` dropdown. Only
+  // meaningful together with `format` (there's no per-decklist format field
+  // to evaluate against otherwise) - a no-op if format isn't also set. The
+  // narrower ban-list-verdict + pool-membership question only, per the plan -
+  // NOT true points-budget MWL legality (still deferred).
+  tournamentLegal?: string;
   order?: string; // "name" | "date" - nothing engagement-based, ever
   page?: number | string;
   pageSize?: number | string;
@@ -71,6 +85,13 @@ function validOrder(order: string | undefined): string | undefined {
   return order && ORDER_VALUES.has(order) ? order : undefined;
 }
 
+// Ignore/Yes/No, matching NRDB classic-site's own `is_legal` dropdown shape -
+// only "1"/"0" are meaningful values, anything else (blank, garbage) means
+// "Ignore" (the filter is skipped entirely), same pattern validOrder uses.
+function validTournamentLegal(value: string | undefined): "1" | "0" | undefined {
+  return value === "1" || value === "0" ? value : undefined;
+}
+
 // Parses a Next.js `searchParams` object into typed
 // AdvancedDecklistSearchParams. Kept separate from searchDecklistsAdvanced()
 // so the parsing (multi-value facet collection, normalization) is testable
@@ -85,6 +106,10 @@ export function parseAdvancedDecklistSearchParams(
   const side = firstParam(input, "side")?.trim();
   const authorId = firstParam(input, "authorId")?.trim();
   const format = firstParam(input, "format")?.trim();
+  const rotation = firstParam(input, "rotation")?.trim();
+  const tournamentLegal = validTournamentLegal(
+    firstParam(input, "tournamentLegal")?.trim(),
+  );
 
   const faction = allParams(input, "faction");
   const pack = allParams(input, "pack");
@@ -102,6 +127,8 @@ export function parseAdvancedDecklistSearchParams(
     cardsExcluded,
     authorId: authorId ? authorId : undefined,
     format: format ? format : undefined,
+    rotation: rotation ? rotation : undefined,
+    tournamentLegal,
     order: validOrder(order),
     page: parsePage(firstParam(input, "page")),
     pageSize: parsePageSize(
@@ -227,6 +254,63 @@ export async function searchDecklistsAdvanced(
           AND NOT ((cc.raw->'attributes'->'format_ids') @> to_jsonb(${params.format}::text))
       )
     `);
+  }
+
+  // Rotation filter (PHASE_10_PLAN.md §3): "is every card in this deck a
+  // member of this specific card pool" - checked via each card's own
+  // `card_pool_ids` (Card.raw.attributes.card_pool_ids), NRDB's own
+  // precomputed per-card pool-membership history. See decklist-legality.ts's
+  // header comment for why this reads card_pool_ids directly rather than
+  // deriving membership from CardPool.cardCycleIds (the plan's literal
+  // wording) - a deliberate, documented deviation. Same NOT EXISTS-over-
+  // DecklistCard shape as every other per-card facet in this file.
+  if (params.rotation) {
+    conditions.push(Prisma.sql`
+      NOT EXISTS (
+        SELECT 1 FROM "DecklistCard" dc
+        JOIN "Card" cc ON cc.code = dc."cardCode"
+        WHERE dc."decklistId" = d.id
+          AND NOT ((cc.raw->'attributes'->'card_pool_ids') @> to_jsonb(${params.rotation}::text))
+      )
+    `);
+  }
+
+  // Tournament Legal filter (PHASE_10_PLAN.md §3): only meaningful together
+  // with `format` (there's no per-decklist format field to evaluate
+  // against otherwise) - a silent no-op if format isn't also set, same
+  // "nothing to check against" reasoning as every other conditional facet
+  // here. Computes the SAME narrow definition decklist-legality.ts's
+  // isDecklistTournamentLegal() pure function does (not banned under the
+  // format's active restriction AND a member of its active card pool) via
+  // one EXISTS-for-any-illegal-card query instead of fetching every card
+  // into JS - real DB-side evaluation across 74k+ decklists, not a
+  // per-request re-derivation of the pure function.
+  if (params.tournamentLegal && params.format) {
+    const activeFormat = await prisma.format.findUnique({
+      where: { id: params.format },
+      select: { activeRestrictionId: true, activeCardPoolId: true },
+    });
+    if (activeFormat && (activeFormat.activeRestrictionId || activeFormat.activeCardPoolId)) {
+      const banCondition = activeFormat.activeRestrictionId
+        ? Prisma.sql`(cc.raw->'attributes'->'restrictions'->'banned') @> to_jsonb(${activeFormat.activeRestrictionId}::text)`
+        : Prisma.sql`false`;
+      const poolCondition = activeFormat.activeCardPoolId
+        ? Prisma.sql`NOT ((cc.raw->'attributes'->'card_pool_ids') @> to_jsonb(${activeFormat.activeCardPoolId}::text))`
+        : Prisma.sql`false`;
+      const hasIllegalCard = Prisma.sql`
+        EXISTS (
+          SELECT 1 FROM "DecklistCard" dc
+          JOIN "Card" cc ON cc.code = dc."cardCode"
+          WHERE dc."decklistId" = d.id
+            AND (${banCondition} OR ${poolCondition})
+        )
+      `;
+      conditions.push(
+        params.tournamentLegal === "1"
+          ? Prisma.sql`NOT (${hasIllegalCard})`
+          : hasIllegalCard,
+      );
+    }
   }
 
   const whereSql = conditions.length

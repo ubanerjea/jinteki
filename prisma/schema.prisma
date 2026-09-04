@@ -303,6 +303,11 @@ model Format {
   id                  String  @id // NRDB format id, e.g. "standard", "eternal"
   name                String
   activeRestrictionId String?
+  // Promoted from Format.raw.attributes.active_card_pool_id - Phase 10 §2,
+  // same pattern as activeRestrictionId above (a plain string, no @relation,
+  // to avoid a Format<->CardPool insert-ordering dependency on a first-ever
+  // sync - same reasoning activeRestrictionId's own comment gives).
+  activeCardPoolId String?
   // Hand-curated prose (prisma/format-description-data.ts, seeded by
   // prisma/seed.ts), NOT synced from NRDB - the v3 `/formats` API has no
   // description/summary field at all (confirmed live 2026-07-30, see
@@ -315,6 +320,7 @@ model Format {
   raw         Json
 
   restrictions Restriction[]
+  cardPools    CardPool[]
 }
 
 model Restriction {
@@ -323,6 +329,52 @@ model Restriction {
   formatId  String
   dateStart DateTime?
   raw       Json
+
+  format Format @relation(fields: [formatId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Card pools ("rotation" data) — Phase 10 §2. Populated by
+// src/sync/sync-card-pools.ts from NRDB's `card_pools` resource - a
+// DIFFERENT resource from `card_sets` (which `Pack` already maps to, see
+// sync-factions-packs.ts's header comment) and from `card_cycles`. A
+// `CardPool` is one named, dated-or-undated snapshot of "every card cycle
+// legal in format X as of this pool" (e.g. Standard's "Seventh Rotation",
+// "Pre Rotation", or the currently-active "Standard 2026 - Vantage Point").
+//
+// Confirmed live 2026-09-04 (api.netrunnerdb.com/api/v3/public/card_pools):
+// unlike Restriction, a card_pools resource carries NO date_start and NO
+// per-snapshot "active" flag of its own - just { name, format_id,
+// card_cycle_ids, updated_at, num_cards }. So Restriction's active/
+// scheduled/past classification (Phase 10 §1) does NOT transfer to
+// CardPool - there's nothing to classify against. This was confirmed at
+// build time per the plan's explicit instruction to check, not assumed.
+//
+// `rotationOrdinal`/`rotationDateStart` are populated only for the subset of
+// card pools that are genuinely one of NSG's numbered "Nth Rotation" events
+// (Standard-only) - sourced from netrunner-cards-json's root-level
+// `rotations.json` file (a repo file, not an API resource, fetched
+// separately by the sync step), matched by transforming that file's
+// `code` ("rotation-2017") into the matching card_pools id
+// ("rotation_2017"). Deliberately NOT derived by string-matching
+// `card_pools.attributes.name` against `.*Rotation$` - `rotation_2020`
+// ("Salvaged Memories") is a real, non-rotation-numbered pool that would
+// break a naive sequential match (confirmed live - see rotationOrdinal's
+// non-sequential test case in sync-card-pools.test.ts). Both columns are
+// null for every pool that isn't one of the seven numbered rotations
+// (pre_rotation, the currently-active pool, salvaged_memories, and every
+// non-Standard format's pools all have null here) - that's expected, not a
+// sync gap.
+// ---------------------------------------------------------------------------
+
+model CardPool {
+  id                String     @id // NRDB card_pool id, e.g. "rotation_2017", "standard_2026_vantage_point"
+  name              String
+  formatId          String
+  cardCycleIds      String[]
+  rotationOrdinal   Int?
+  rotationDateStart DateTime?
+  raw               Json
 
   format Format @relation(fields: [formatId], references: [id])
 }
@@ -376,6 +428,7 @@ enum SyncType {
   RULINGS
   RULES
   RESTRICTIONS
+  CARD_POOLS
 }
 
 enum SyncStatus {

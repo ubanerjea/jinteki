@@ -1,12 +1,16 @@
-// Runs all six syncs in dependency order: factions+packs -> cards ->
-// decklists -> rulings -> rules -> restrictions. Stops (non-zero exit) on the
-// first failure rather than continuing on to steps whose FK dependencies
-// didn't finish syncing. "rules" and "restrictions" have no FK dependency on
-// the other four (RuleSection is scraped from rules.nullsignal.games, and
-// Format/Restriction are wholly new independent tables, per PHASE_6_PLAN.md
-// item 9) - both are placed last simply to keep NRDB-sourced resources
-// grouped together.
+// Runs all seven syncs in dependency order: factions+packs -> cards ->
+// decklists -> rulings -> rules -> restrictions -> card-pools. Stops
+// (non-zero exit) on the first failure rather than continuing on to steps
+// whose FK dependencies didn't finish syncing. "rules" and "restrictions"
+// have no FK dependency on the other four (RuleSection is scraped from
+// rules.nullsignal.games, and Format/Restriction are wholly new independent
+// tables, per PHASE_6_PLAN.md item 9) - both are placed after those simply
+// to keep NRDB-sourced resources grouped together. "card-pools" MUST run
+// after "restrictions" specifically (not just grouped-together placement) -
+// CardPool.formatId is a real FK into Format, and restrictions.ts is what
+// upserts Format rows (PHASE_10_PLAN.md §2).
 
+import { runCardPoolsSync } from "./sync-card-pools";
 import { runCardsSync } from "./sync-cards";
 import { runDecklistsSync } from "./sync-decklists";
 import { runFactionsPacksSync } from "./sync-factions-packs";
@@ -21,6 +25,7 @@ const steps: [string, () => Promise<{ status: string; recordCount: number | null
   ["rulings", runRulingsSync],
   ["rules", runRulesSync],
   ["restrictions", runRestrictionsSync],
+  ["card-pools", runCardPoolsSync],
 ];
 
 async function main() {

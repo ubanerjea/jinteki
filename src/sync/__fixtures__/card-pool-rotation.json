@@ -1,0 +1,15 @@
+{
+  "id": "rotation_2017",
+  "type": "card_pools",
+  "attributes": {
+    "name": "First Rotation",
+    "format_id": "standard",
+    "card_cycle_ids": ["creation_and_control", "data_and_destiny", "flashpoint", "honor_and_profit", "kitara", "lunar", "mumbad", "order_and_chaos", "red_sand", "reign_and_reverie", "revised_core_set", "sansan"],
+    "updated_at": "2026-08-12T01:54:39+00:00",
+    "num_cards": 1181
+  },
+  "relationships": {
+    "format": { "links": { "related": "https://api.netrunnerdb.com/api/v3/public/formats/standard" } }
+  },
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/card_pools/rotation_2017" }
+}

@@ -108,6 +108,18 @@ export interface CardAttributes {
   // `Format.activeRestrictionId` (src/lib/restrictions.ts) to determine
   // *current* legality per format, per item 9's build.
   restrictions?: CardRestrictionsAttribute;
+  // Every card_pools id this card has ever been a member of (Phase 10 §3) -
+  // confirmed live 2026-09-04 (GET /cards/aircheck) to be NRDB's own
+  // precomputed, authoritative answer to "which rotations/card pools has
+  // this card ever been legal under" - e.g. a very recent card lists only
+  // its current pools (["eternal", "standard_2026_vantage_point",
+  // "startup_vantage_point"]), an old card lists every pool back through
+  // pre_rotation. Used by src/lib/search/decklists-advanced.ts's rotation
+  // and tournament-legal filters (via JSONB containment against a target
+  // CardPool id) instead of deriving pool membership from card_cycle_ids, a
+  // deliberate deviation from PHASE_10_PLAN.md's literal wording - see that
+  // file's own header comment for the reasoning.
+  card_pool_ids?: string[];
   [key: string]: unknown;
 }
 
@@ -182,6 +194,25 @@ export interface RestrictionAttributes {
 }
 
 export type RestrictionResource = JsonApiResource<"restrictions", RestrictionAttributes>;
+
+// --- card_pools ("rotation" data) ---------------------------------------
+// Confirmed live 2026-09-04 against GET /card_pools - a DIFFERENT resource
+// from `card_sets` (= our `Pack` model) and `card_cycles`. No `date_start`
+// and no per-snapshot "active" field exists on this resource (unlike
+// restrictions) - confirmed by reading every attribute key returned live for
+// several formats' card_pools, see prisma/schema.prisma's CardPool model
+// comment.
+
+export interface CardPoolAttributes {
+  name: string;
+  format_id: string;
+  card_cycle_ids: string[];
+  updated_at: string;
+  num_cards: number;
+  [key: string]: unknown;
+}
+
+export type CardPoolResource = JsonApiResource<"card_pools", CardPoolAttributes>;
 
 // --- rulings -----------------------------------------------------------
 

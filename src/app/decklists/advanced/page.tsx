@@ -64,7 +64,7 @@ export default async function AdvancedDecklistSearchPage({
   const rawParams = await searchParams;
   const params = parseAdvancedDecklistSearchParams(rawParams);
 
-  const [prefixOptions, packs, identities, cards, formats] = await Promise.all([
+  const [prefixOptions, packs, identities, cards, formats, rotations] = await Promise.all([
     getPrefixOptions(),
     prisma.pack.findMany({ orderBy: { name: "asc" } }),
     // Only identities actually used by at least one decklist - the same
@@ -87,6 +87,14 @@ export default async function AdvancedDecklistSearchPage({
     // Same prisma.format.findMany() call /cards/advanced's own Format row
     // already uses - nothing new (addendum, 2026-08-08).
     prisma.format.findMany({ orderBy: { name: "asc" } }),
+    // Rotation filter options (Phase 10 §3) - only the subset of CardPool
+    // rows that are genuinely one of NSG's seven numbered rotations
+    // (rotationOrdinal not null - today, exclusively Standard's). Newest
+    // first, matching every other history-style ordering in this codebase.
+    prisma.cardPool.findMany({
+      where: { rotationOrdinal: { not: null } },
+      orderBy: { rotationOrdinal: "desc" },
+    }),
   ]);
 
   const packOptions: FacetOption[] = packs.map((p) => ({
@@ -213,6 +221,54 @@ export default async function AdvancedDecklistSearchPage({
                 {f.name}
               </option>
             ))}
+          </select>
+        </Row>
+
+        {/* Rotation filter (Phase 10 §3) - mirrors NRDB classic-site's
+            `rotation_id` dropdown. "Any rotation" plus only the CardPool
+            rows that are genuinely one of Standard's seven numbered
+            rotations - computed entirely from jinteki's own synced data,
+            since NRDB doesn't expose this filter on its public API. */}
+        <Row
+          label="Rotation"
+          htmlFor="adv-rotation"
+          hint="Standard's numbered rotations only. Decks where every card has ever belonged to that card pool."
+        >
+          <select
+            id="adv-rotation"
+            name="rotation"
+            defaultValue={params.rotation ?? ""}
+            className={INPUT_CLASS}
+          >
+            <option value="">Any rotation</option>
+            {rotations.map((pool) => (
+              <option key={pool.id} value={pool.id}>
+                {pool.name}
+              </option>
+            ))}
+          </select>
+        </Row>
+
+        {/* Tournament Legal filter (Phase 10 §3) - mirrors NRDB classic-site's
+            `is_legal` dropdown. Only meaningful together with Format above -
+            there's no per-decklist format field, so "legal" has to mean
+            "legal in the format you picked." Deliberately the narrower
+            ban-list-verdict + pool-membership question only, not true
+            points-budget MWL legality (still out of scope, per the plan). */}
+        <Row
+          label="Tournament Legal"
+          htmlFor="adv-tournament-legal"
+          hint="Requires Format above. No card banned under that format's active restriction, and every card in its active card pool. Does not check points/influence budgets."
+        >
+          <select
+            id="adv-tournament-legal"
+            name="tournamentLegal"
+            defaultValue={params.tournamentLegal ?? ""}
+            className={INPUT_CLASS}
+          >
+            <option value="">Ignore</option>
+            <option value="1">Yes</option>
+            <option value="0">No</option>
           </select>
         </Row>
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { SyncType, type SyncRun } from "@prisma/client";
 
 import { requireAdmin } from "@/lib/require-admin";
+import { runCardPoolsSync } from "@/sync/sync-card-pools";
 import { runCardsSync } from "@/sync/sync-cards";
 import { runDecklistsSync } from "@/sync/sync-decklists";
 import { runFactionsPacksSync } from "@/sync/sync-factions-packs";
@@ -25,6 +26,7 @@ const SYNC_HANDLERS: Record<
   rulings: { type: SyncType.RULINGS, run: runRulingsSync },
   rules: { type: SyncType.RULES, run: runRulesSync },
   restrictions: { type: SyncType.RESTRICTIONS, run: runRestrictionsSync },
+  "card-pools": { type: SyncType.CARD_POOLS, run: runCardPoolsSync },
 };
 
 export async function POST(

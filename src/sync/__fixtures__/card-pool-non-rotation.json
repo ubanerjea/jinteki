@@ -1,0 +1,15 @@
+{
+  "id": "rotation_2020",
+  "type": "card_pools",
+  "attributes": {
+    "name": "Salvaged Memories",
+    "format_id": "standard",
+    "card_cycle_ids": ["creation_and_control", "data_and_destiny", "flashpoint", "honor_and_profit", "kitara", "lunar", "magnum_opus", "magnum_opus_reprint", "mumbad", "order_and_chaos", "red_sand", "reign_and_reverie", "sansan", "system_core_2019"],
+    "updated_at": "2026-08-12T01:54:39+00:00",
+    "num_cards": 1106
+  },
+  "relationships": {
+    "format": { "links": { "related": "https://api.netrunnerdb.com/api/v3/public/formats/standard" } }
+  },
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/card_pools/rotation_2020" }
+}

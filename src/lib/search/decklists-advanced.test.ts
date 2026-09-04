@@ -117,6 +117,52 @@ describe("parseAdvancedDecklistSearchParams", () => {
     });
   });
 
+  describe("rotation (Phase 10 §3)", () => {
+    it("blank/absent rotation filters nothing", () => {
+      expect(parseAdvancedDecklistSearchParams({}).rotation).toBeUndefined();
+      expect(
+        parseAdvancedDecklistSearchParams({ rotation: "" }).rotation,
+      ).toBeUndefined();
+      expect(
+        parseAdvancedDecklistSearchParams({ rotation: "  " }).rotation,
+      ).toBeUndefined();
+    });
+
+    it("trims a real value", () => {
+      expect(
+        parseAdvancedDecklistSearchParams({ rotation: "  rotation_2025  " })
+          .rotation,
+      ).toBe("rotation_2025");
+    });
+  });
+
+  describe("tournamentLegal (Phase 10 §3)", () => {
+    it("accepts only '1' or '0'", () => {
+      expect(
+        parseAdvancedDecklistSearchParams({ tournamentLegal: "1" })
+          .tournamentLegal,
+      ).toBe("1");
+      expect(
+        parseAdvancedDecklistSearchParams({ tournamentLegal: "0" })
+          .tournamentLegal,
+      ).toBe("0");
+    });
+
+    it("blank/absent/garbage all mean Ignore (undefined)", () => {
+      expect(
+        parseAdvancedDecklistSearchParams({}).tournamentLegal,
+      ).toBeUndefined();
+      expect(
+        parseAdvancedDecklistSearchParams({ tournamentLegal: "" })
+          .tournamentLegal,
+      ).toBeUndefined();
+      expect(
+        parseAdvancedDecklistSearchParams({ tournamentLegal: "yes" })
+          .tournamentLegal,
+      ).toBeUndefined();
+    });
+  });
+
   it("restricts pageSize to the set the form offers", () => {
     expect(parseAdvancedDecklistSearchParams({ pageSize: "60" }).pageSize).toBe(
       60,
@@ -370,6 +416,199 @@ describe("searchDecklistsAdvanced (real DB)", () => {
       });
       expect(result.total).toBe(0);
       expect(result.items).toHaveLength(0);
+    });
+  });
+
+  describe("rotation: every card must have ever belonged to the target pool (Phase 10 §3)", () => {
+    it(
+      "rotation=rotation_2025 returns a strict subset, cross-checked against an independently-shaped direct query",
+      async () => {
+        const total = await prisma.decklist.count();
+
+        // Deliberately a different shape from the implementation's
+        // correlated NOT EXISTS (a LATERAL LEFT JOIN anti-join instead) -
+        // not a copy-paste of the production SQL. A plain `NOT IN (subquery
+        // over the full 1.78M-row DecklistCard/Card join)` was tried first
+        // (the same shape the format filter's own oracle test uses) but
+        // confirmed live to be pathologically slow for this specific
+        // JSONB path/value (Postgres chose a non-hashed SubPlan with
+        // cost≈1e9 and didn't complete even after minutes, confirmed via
+        // EXPLAIN and a real timed run - see agent-reports/phase-10.md) -
+        // NOT a correctness issue, a query-planning one specific to that
+        // shape, so a different (still independent) shape is used here
+        // instead. This one completes in ~2.6s (confirmed live in psql).
+        const oracle = await prisma.$queryRaw<{ count: bigint }[]>`
+          SELECT count(*)::bigint AS count FROM "Decklist" d
+          LEFT JOIN LATERAL (
+            SELECT 1 FROM "DecklistCard" dc
+            JOIN "Card" cc ON cc.code = dc."cardCode"
+            WHERE dc."decklistId" = d.id
+              AND NOT ((cc.raw->'attributes'->'card_pool_ids') @> to_jsonb('rotation_2025'::text))
+            LIMIT 1
+          ) bad ON true
+          WHERE bad IS NULL
+        `;
+        const expected = Number(oracle[0].count);
+        expect(expected).toBe(6100); // pinned, cross-checked live in psql
+
+        const result = await searchDecklistsAdvanced({
+          rotation: "rotation_2025",
+          pageSize: 1,
+        });
+        expect(result.total).toBe(expected);
+        expect(result.total).toBeLessThan(total);
+      },
+      15000,
+    );
+
+    it("every returned row's cards really do belong to rotation_2025", async () => {
+      const result = await searchDecklistsAdvanced({
+        rotation: "rotation_2025",
+        pageSize: 20,
+      });
+      expect(result.items.length).toBeGreaterThan(0);
+      const ids = result.items.map((d) => d.id);
+      const cards = await prisma.decklistCard.findMany({
+        where: { decklistId: { in: ids } },
+        select: { cardCode: true },
+      });
+      const codes = [...new Set(cards.map((c) => c.cardCode))];
+      const cardRows = await prisma.card.findMany({
+        where: { code: { in: codes } },
+        select: { code: true, raw: true },
+      });
+      for (const card of cardRows) {
+        const poolIds = (
+          card.raw as { attributes?: { card_pool_ids?: string[] } }
+        ).attributes?.card_pool_ids;
+        expect(poolIds).toContain("rotation_2025");
+      }
+    });
+
+    it("blank rotation filters nothing (full total)", async () => {
+      const total = await prisma.decklist.count();
+      const result = await searchDecklistsAdvanced({ pageSize: 1 });
+      expect(result.total).toBe(total);
+    });
+  });
+
+  describe("tournamentLegal: not banned under the active restriction AND a member of the active card pool (Phase 10 §3)", () => {
+    it(
+      "format=standard: Yes/No partition the format-filtered subtotal exactly (5970 / 67505 of 73475)",
+      async () => {
+        // Baseline is the format-filtered subtotal, not the grand decklist
+        // total - searchDecklistsAdvanced's pre-existing `format` addendum
+        // condition (deck-wide format_ids containment) also applies whenever
+        // `format` is set, independent of tournamentLegal; the two compound,
+        // same as any other two ANDed facets in this file (confirmed this is
+        // really what's happening, not a bug, via a direct psql query
+        // combining both conditions - see agent-reports/phase-10.md).
+        const formatOnly = await searchDecklistsAdvanced({
+          format: "standard",
+          pageSize: 1,
+        });
+        expect(formatOnly.total).toBe(73475); // pinned, cross-checked live in psql
+
+        const legal = await searchDecklistsAdvanced({
+          format: "standard",
+          tournamentLegal: "1",
+          pageSize: 1,
+        });
+        const illegal = await searchDecklistsAdvanced({
+          format: "standard",
+          tournamentLegal: "0",
+          pageSize: 1,
+        });
+        expect(legal.total).toBe(5970); // pinned, cross-checked live in psql
+        expect(illegal.total).toBe(67505); // pinned, cross-checked live in psql
+        expect(legal.total + illegal.total).toBe(formatOnly.total);
+      },
+      // Three searchDecklistsAdvanced() calls, two of them with two ANDed
+      // EXISTS/NOT EXISTS conditions each joining the full 1.78M-row
+      // DecklistCard table (the pre-existing format filter plus this one) -
+      // genuinely more work than the single-condition facets elsewhere in
+      // this file; default 5000ms was confirmed too tight by a real timeout
+      // on first run of this test.
+      20000,
+    );
+
+    it("every 'legal' row genuinely has no card banned under standard_ban_list_26_03 and every card in standard_2026_vantage_point", async () => {
+      const result = await searchDecklistsAdvanced({
+        format: "standard",
+        tournamentLegal: "1",
+        pageSize: 15,
+      });
+      expect(result.items.length).toBeGreaterThan(0);
+      const ids = result.items.map((d) => d.id);
+      const cards = await prisma.decklistCard.findMany({
+        where: { decklistId: { in: ids } },
+        select: { cardCode: true },
+      });
+      const codes = [...new Set(cards.map((c) => c.cardCode))];
+      const cardRows = await prisma.card.findMany({
+        where: { code: { in: codes } },
+        select: { code: true, raw: true },
+      });
+      for (const card of cardRows) {
+        const attrs = (
+          card.raw as {
+            attributes?: {
+              card_pool_ids?: string[];
+              restrictions?: { banned?: string[] };
+            };
+          }
+        ).attributes;
+        expect(attrs?.card_pool_ids).toContain("standard_2026_vantage_point");
+        expect(attrs?.restrictions?.banned ?? []).not.toContain(
+          "standard_ban_list_26_03",
+        );
+      }
+    });
+
+    it("tournamentLegal without format is a no-op (full total, not zero/empty)", async () => {
+      const total = await prisma.decklist.count();
+      const result = await searchDecklistsAdvanced({
+        tournamentLegal: "1",
+        pageSize: 1,
+      });
+      expect(result.total).toBe(total);
+    });
+
+    it("a format with no active restriction (ram) still applies the pool-membership half of the check", async () => {
+      // ram's activeRestrictionId is null (confirmed live) but
+      // activeCardPoolId is "ram_7" - the ban check should be vacuously
+      // true, but pool membership should still narrow real results.
+      const format = await prisma.format.findUniqueOrThrow({
+        where: { id: "ram" },
+      });
+      expect(format.activeRestrictionId).toBeNull();
+      expect(format.activeCardPoolId).toBe("ram_7");
+
+      // Baseline is the format-filtered subtotal (searchDecklistsAdvanced's
+      // pre-existing `format` addendum condition also applies whenever
+      // `format` is set, independent of tournamentLegal - both filters
+      // compound, same as any other two ANDed facets in this file), NOT the
+      // grand decklist total.
+      const formatOnly = await searchDecklistsAdvanced({
+        format: "ram",
+        pageSize: 1,
+      });
+      expect(formatOnly.total).toBe(18901); // pinned, cross-checked live in psql
+
+      const legal = await searchDecklistsAdvanced({
+        format: "ram",
+        tournamentLegal: "1",
+        pageSize: 1,
+      });
+      const illegal = await searchDecklistsAdvanced({
+        format: "ram",
+        tournamentLegal: "0",
+        pageSize: 1,
+      });
+      expect(legal.total).toBe(377); // pinned, cross-checked live in psql
+      expect(legal.total + illegal.total).toBe(formatOnly.total);
+      expect(legal.total).toBeGreaterThan(0);
+      expect(legal.total).toBeLessThan(formatOnly.total);
     });
   });
 

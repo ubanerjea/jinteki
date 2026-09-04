@@ -1,0 +1,15 @@
+{
+  "id": "standard_2026_vantage_point",
+  "type": "card_pools",
+  "attributes": {
+    "name": "Standard 2026 - Vantage Point",
+    "format_id": "standard",
+    "card_cycle_ids": ["vantage_point"],
+    "updated_at": "2026-08-12T01:54:39+00:00",
+    "num_cards": 613
+  },
+  "relationships": {
+    "format": { "links": { "related": "https://api.netrunnerdb.com/api/v3/public/formats/standard" } }
+  },
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/card_pools/standard_2026_vantage_point" }
+}

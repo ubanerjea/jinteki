@@ -33,6 +33,10 @@ export function mapFormat(
     id,
     name: attributes.name,
     activeRestrictionId: attributes.active_restriction_id ?? null,
+    // Promoted from raw.attributes.active_card_pool_id - Phase 10 §2, same
+    // pattern as activeRestrictionId directly above (already fetched into
+    // `raw` today, just not promoted to its own column until now).
+    activeCardPoolId: attributes.active_card_pool_id ?? null,
     raw: JSON.parse(JSON.stringify(resource)) as Prisma.InputJsonValue,
   };
 }

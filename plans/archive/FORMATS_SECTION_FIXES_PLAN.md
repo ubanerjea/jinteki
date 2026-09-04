@@ -1,4 +1,12 @@
-# jinteki — Formats Section Fixes Plan
+# jinteki — Formats Section Fixes Plan (archived)
+
+**Superseded 2026-09-04 by `plans/PHASE_10_PLAN.md`**, which turns this doc's three drafted fixes
+(restriction-history display, `CardPool`/rotation sync, decklist rotation & tournament-legal
+filters) into one closed, phase-numbered batch of work. Kept here for its research/investigation
+detail — the "Background" sections under each fix are still the primary-source record — but the
+Fix/Verification sections themselves should be read via Phase 10's own sections 1–3, not built
+from directly. This doc is no longer the open-ended home for new format-section fixes; a future
+fix gets its own small plan or phase instead.
 
 ## Context
 

@@ -117,6 +117,83 @@ export interface LegalityLine {
  * value in the label - same grouping behavior as the old string-based
  * version, just carrying formatId through instead of discarding it.
  */
+// --- Restriction-history display (PHASE_10_PLAN.md §1) --------------------
+//
+// /formats/[id]'s restriction-history list previously rendered every
+// Restriction row matching a format with only a single isActive check,
+// conflating four different things: real past history, the active entry,
+// real future/staged entries NSG has scheduled but not yet flipped active,
+// and unrelated "NRDB Classic" legacy bookkeeping entries (name suffix
+// "(ignore active date)") that shouldn't appear in a live format's history
+// view at all. Root cause confirmed against primary sources (NSG's
+// netrunner-cards-json, NRDB's nrdbv2 frontend source) - see
+// plans/archive/FORMATS_SECTION_FIXES_PLAN.md's Fix 1 Background and
+// PHASE_10_PLAN.md §1: `active_restriction_id` is a hand-set editorial flag,
+// not date-derived, and "(ignore active date)" is NRDB's own documented
+// signal for legacy classic-site-only bookkeeping rows. jinteki's sync
+// already mirrors the flag correctly - this is purely a display fix.
+
+export type RestrictionHistoryStatus = "active" | "scheduled" | "past";
+
+export interface RestrictionLike {
+  id: string;
+  name: string;
+  dateStart: Date | null;
+}
+
+export interface RestrictionHistoryEntry {
+  restriction: RestrictionLike;
+  status: RestrictionHistoryStatus;
+}
+
+const LEGACY_NAME_SUFFIX = " (ignore active date)";
+
+/**
+ * Classifies a format's restriction history into active/scheduled/past,
+ * excluding NRDB's legacy "(ignore active date)" bookkeeping rows entirely.
+ *
+ * Classification compares each restriction's `dateStart` against the
+ * *active* restriction's `dateStart` (matched via `format.activeRestrictionId`)
+ * - not against wall-clock "today". NSG flips the active flag manually and it
+ * can lag real time (a scheduled entry's date_start can already be in the
+ * past relative to today while still not being the flipped-active entry) -
+ * confirmed live 2026-09-04: standard's active entry is
+ * `standard_ban_list_26_03` (date_start 2026-03-13) even though
+ * `standard_ban_list_26_05` (2026-05-01) and `standard_balance_update_26_08`
+ * (2026-08-01) - both real, later-dated entries - already exist in the same
+ * history.
+ *
+ * Preserves the input's ordering (callers pass restrictions already sorted
+ * newest-first by dateStart, matching /formats/[id]'s existing query) - this
+ * function doesn't re-sort.
+ */
+export function classifyRestrictionHistory(
+  format: FormatLike,
+  restrictions: RestrictionLike[],
+): RestrictionHistoryEntry[] {
+  const visible = restrictions.filter(
+    (r) => !r.name.endsWith(LEGACY_NAME_SUFFIX),
+  );
+
+  const activeId = format.activeRestrictionId;
+  const active = activeId ? visible.find((r) => r.id === activeId) : undefined;
+  const activeDateStart = active?.dateStart ?? null;
+
+  return visible.map((restriction) => {
+    if (activeId && restriction.id === activeId) {
+      return { restriction, status: "active" as const };
+    }
+    if (
+      activeDateStart &&
+      restriction.dateStart &&
+      restriction.dateStart.getTime() > activeDateStart.getTime()
+    ) {
+      return { restriction, status: "scheduled" as const };
+    }
+    return { restriction, status: "past" as const };
+  });
+}
+
 export function summarizeLegality(entries: CardLegalityEntry[]): LegalityLine[] {
   const lines: LegalityLine[] = [];
 

@@ -15,6 +15,7 @@
     "sync:rulings": "tsx src/sync/sync-rulings.ts",
     "sync:rules": "tsx src/sync/sync-rules.ts",
     "sync:restrictions": "tsx src/sync/sync-restrictions.ts",
+    "sync:card-pools": "tsx src/sync/sync-card-pools.ts",
     "sync:all": "tsx src/sync/sync-all.ts",
     "docs:schema": "tsx scripts/generate-schema-doc.ts"
   },

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { computeCardLegality, summarizeLegality } from "./restrictions";
+import {
+  classifyRestrictionHistory,
+  computeCardLegality,
+  summarizeLegality,
+} from "./restrictions";
 
 const formats = [
   { id: "standard", name: "Standard", activeRestrictionId: "standard_ban_list_26_03" },
@@ -170,5 +174,94 @@ describe("summarizeLegality", () => {
 
   it("returns an empty array when there are no entries", () => {
     expect(summarizeLegality([])).toEqual([]);
+  });
+});
+
+describe("classifyRestrictionHistory", () => {
+  const standard = { id: "standard", name: "Standard", activeRestrictionId: "standard_ban_list_26_03" };
+  const ram = { id: "ram", name: "Random Access Memories", activeRestrictionId: null };
+
+  // Ordered newest-first, mirroring /formats/[id]'s real query order and the
+  // real live shape confirmed 2026-09-04: two later-dated real entries exist
+  // alongside the active one, plus a legacy "(ignore active date)" row dated
+  // in between.
+  const balanceUpdate2608 = {
+    id: "standard_balance_update_26_08",
+    name: "Standard Balance Update 26.08",
+    dateStart: new Date("2026-08-01"),
+  };
+  const banList2605 = {
+    id: "standard_ban_list_26_05",
+    name: "Standard Ban List 26.05",
+    dateStart: new Date("2026-05-01"),
+  };
+  const banList2603 = {
+    id: "standard_ban_list_26_03",
+    name: "Standard Ban List 26.03",
+    dateStart: new Date("2026-03-13"),
+  };
+  const legacyEntry = {
+    id: "startup_balance_update_26_05_for_classic_only",
+    name: "Startup Balance Update 26.05 (ignore active date)",
+    dateStart: new Date("2026-04-01"),
+  };
+  const banList2512 = {
+    id: "standard_ban_list_25_12",
+    name: "Standard Ban List 25.12",
+    dateStart: new Date("2025-12-01"),
+  };
+
+  it("excludes a restriction named '... (ignore active date)' entirely, regardless of dateStart", () => {
+    const result = classifyRestrictionHistory(standard, [legacyEntry]);
+    expect(result).toEqual([]);
+  });
+
+  it("a restriction later-dated than the active one is 'scheduled', not 'past'", () => {
+    const result = classifyRestrictionHistory(standard, [banList2605, banList2603]);
+    expect(result).toEqual([
+      { restriction: banList2605, status: "scheduled" },
+      { restriction: banList2603, status: "active" },
+    ]);
+  });
+
+  it("the restriction matching format.activeRestrictionId is 'active'", () => {
+    const result = classifyRestrictionHistory(standard, [banList2603]);
+    expect(result).toEqual([{ restriction: banList2603, status: "active" }]);
+  });
+
+  it("a restriction earlier-dated than the active one is 'past'", () => {
+    const result = classifyRestrictionHistory(standard, [banList2603, banList2512]);
+    expect(result).toEqual([
+      { restriction: banList2603, status: "active" },
+      { restriction: banList2512, status: "past" },
+    ]);
+  });
+
+  it("ordering (newest-first) is preserved across all three statuses mixed together, legacy rows dropped", () => {
+    const result = classifyRestrictionHistory(standard, [
+      balanceUpdate2608,
+      banList2605,
+      legacyEntry,
+      banList2603,
+      banList2512,
+    ]);
+    expect(result).toEqual([
+      { restriction: balanceUpdate2608, status: "scheduled" },
+      { restriction: banList2605, status: "scheduled" },
+      { restriction: banList2603, status: "active" },
+      { restriction: banList2512, status: "past" },
+    ]);
+  });
+
+  it("activeRestrictionId: null -> everything classifies 'past' (e.g. ram)", () => {
+    const result = classifyRestrictionHistory(ram, [banList2603, banList2512]);
+    expect(result).toEqual([
+      { restriction: banList2603, status: "past" },
+      { restriction: banList2512, status: "past" },
+    ]);
+  });
+
+  it("empty restriction list -> empty result", () => {
+    expect(classifyRestrictionHistory(standard, [])).toEqual([]);
   });
 });

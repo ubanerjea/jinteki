@@ -84,6 +84,12 @@ export default async function AdvancedDecklistResultsPage({
   }
   if (params.side) summaryParts.push(`Side ${formatCode(params.side)}`);
   if (params.format) summaryParts.push(`Format ${formatCode(params.format)}`);
+  if (params.rotation) summaryParts.push(`Rotation ${formatCode(params.rotation)}`);
+  if (params.tournamentLegal) {
+    summaryParts.push(
+      `Tournament legal ${params.tournamentLegal === "1" ? "Yes" : "No"}`,
+    );
+  }
   if (params.pack.length) {
     summaryParts.push(`Pack ${params.pack.map(formatCode).join(", ")}`);
   }
