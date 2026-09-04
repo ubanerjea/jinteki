@@ -183,7 +183,101 @@ already has everything needed: `id`, `name`, `formatId`, `dateStart`, `raw`).
 
 ---
 
-## Fix 2+: reserved for future entries
+## Fix 2: Sync and expose card-pool ("rotation") data
+
+### Problem
+
+`/formats`/`/formats/[id]` has no way to show Standard's rotating card-pool history or
+label which pool is currently active. `Format.raw.attributes.active_card_pool_id` is
+already synced into JSONB (part of the raw NRDB resource) but unused.
+
+### Background
+
+Full primary-source detail: `agent-reports/nrdb-rotation-and-tournament-legal-research.md`.
+
+### Fix
+
+- Promote `Format.raw.attributes.active_card_pool_id` to a real column
+  (`activeCardPoolId`), same pattern already used for `activeRestrictionId`. No new sync
+  required for this part alone.
+- Add a new `CardPool` model + sync step (new `SyncType` variant) from NRDB's
+  `GET /card_pools`, analogous to `sync-restrictions.ts`. Name it `CardPool`, not
+  anything that could be confused with the existing `Pack` model — `Pack` already maps
+  to NRDB's distinct `card_sets` resource; `card_pools` is a different resource.
+  `CardPool` needs `id`, `name`, `formatId`, `cardCycleIds`, `raw`.
+  - Also sync `rotations.json` from `netrunner-cards-json` (a repo file, not an API
+    resource — separate fetch) to get authoritative "Nth Rotation" ordinal/name labels.
+    Do not derive the ordinal by string-matching `card_pools.attributes.name` against
+    `.*Rotation$` — `rotation_2020`/"Salvaged Memories" breaks a naive sequential match.
+- Render on `/formats/[id]`: the active card pool (labelled with its rotation ordinal
+  where one applies) and a rotation-history list, in the same style as the existing
+  restriction-history list.
+
+### Goal
+
+`/formats/[id]` shows which card pool (and, for Standard, which numbered rotation) is
+currently active, plus rotation history — matching NRDB's own rotation info, built
+entirely from jinteki's own synced data.
+
+### Verification
+
+- `psql` row count for the new `CardPool` table matches the live `card_pools` count per
+  format from `api.netrunnerdb.com/api/v3/public/card_pools?filter[format_id]=...`.
+- `/formats/standard` renders the correct active rotation label, cross-checked against
+  the live API's `active_card_pool_id` / `card_pools` data.
+- Standard project verification standards (`plans/PROJECT_PLAN.md`), including `psql
+  \d` schema introspection since this fix adds a migration.
+
+---
+
+## Fix 3: Decklist rotation and tournament-legal filters
+
+### Problem
+
+NRDB's own decklist search offers "Rotation" and "Tournament Legal" filters; jinteki's
+`/decklists` search has neither.
+
+### Background
+
+Full primary-source detail: `agent-reports/nrdb-rotation-and-tournament-legal-research.md`.
+Neither filter is exposed by NRDB's public v3 API (`filter[rotation_id]`,
+`filter[is_legal]`, `filter[mwl_code]` all return HTTP 500 and are undocumented) — both
+only exist behind NRDB's classic site's non-public search endpoint. There is no NRDB
+value to sync for either; both would be entirely jinteki's own computed features,
+depending on Fix 2's `CardPool` data.
+
+### Fix
+
+- **Rotation filter**: using Fix 2's `CardPool.cardCycleIds`, compute whether a
+  decklist's cards (`Decklist.raw.attributes.card_slots`) all belong to a target pool's
+  cycles; expose as a `/decklists` search param mirroring NRDB's `rotation_id`.
+- **Tournament-legal filter**: compute per-decklist, per-format legality by combining
+  (a) ban-list verdicts already synced (`Restriction.raw.attributes.verdicts`, already
+  read by `src/lib/restrictions.ts` / `src/lib/search/format-cards.ts`) and (b) card-pool
+  membership from Fix 2. Expose as a boolean `/decklists` filter mirroring NRDB's
+  `is_legal`.
+- Sequence after Fix 2 — both need `CardPool` data to exist first.
+- Keep `follows_basic_deckbuilding_rules` (already synced, already a distinct concept —
+  structural deckbuilding validity) separate from "tournament legal"; don't conflate them.
+
+### Goal
+
+`/decklists` gains rotation and tournament-legal filters equivalent to NRDB's own
+decklist search, computed entirely from jinteki's own synced data, with no dependency on
+NRDB's non-public search endpoint.
+
+### Verification
+
+- Unit tests for the rotation/legality computation functions against fixture decklists
+  and card pools (no DB needed for the pure logic).
+- Spot-check a handful of real decklists' computed results against NRDB's own classic-site
+  search (`netrunnerdb.com/en/decklists/find?rotation_id=...`/`is_legal=...`) for
+  agreement.
+- Standard project verification standards (`plans/PROJECT_PLAN.md`).
+
+---
+
+## Fix 4+: reserved for future entries
 
 Append future fixes to this document as new `## Fix N: ...` sections, same
 Problem → Root cause → Fix → Verification shape. This doc stays open-ended by design —
