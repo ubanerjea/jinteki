@@ -236,8 +236,9 @@ export async function searchDecklistsAdvanced(
   // legality (a card can be pool-member and still banned/pointed under the
   // active Restriction; this says nothing about that, same honest
   // limitation /cards/advanced's own Format row states in its hint).
-  // Reuses the exact same format_ids JSONB-containment check cards.ts'
-  // buildFacetConditions() uses for its own `format` facet, against every
+  // Deck-wide format_ids membership (historical format membership, not
+  // current-pool). Card search's format= facet is current-pool instead;
+  // this filter is unchanged from Phase 10. Against every
   // card in the deck - a fourth instance of this phase's per-card
   // EXISTS/NOT EXISTS-over-DecklistCard shape (pack, cardsUsed,
   // cardsExcluded, now this), not new infrastructure. Deliberately includes

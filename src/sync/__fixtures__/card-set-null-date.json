@@ -1,0 +1,15 @@
+{
+  "id": "unreleased_draft",
+  "type": "card_sets",
+  "attributes": {
+    "name": "Unreleased Draft",
+    "date_release": null,
+    "size": null,
+    "card_cycle_id": "draft",
+    "card_set_type_id": "draft",
+    "position": 1,
+    "updated_at": "2026-08-12T01:54:28+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/card_sets/unreleased_draft" }
+}

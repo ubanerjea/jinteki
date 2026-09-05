@@ -56,6 +56,9 @@ export interface AdvancedCardSearchParams {
   keyword?: string[];
   pack?: string[];
   format?: string;
+  // "1" | "0" | unset, same Ignore/Yes/No shape as decklist tournamentLegal.
+  // Only applied when `format` is also set.
+  banned?: string;
   order?: string;
   page?: number | string;
   pageSize?: number | string;
@@ -69,6 +72,10 @@ export interface ParsedAdvancedCardSearchParams extends AdvancedCardSearchParams
   pack: string[];
   page: number;
   pageSize: number;
+}
+
+function validBanned(value: string | undefined): "1" | "0" | undefined {
+  return value === "1" || value === "0" ? value : undefined;
 }
 
 // Parses a Next.js `searchParams` object into typed AdvancedCardSearchParams.
@@ -98,6 +105,7 @@ export function parseAdvancedCardSearchParams(
   const textRaw = firstParam(input, "text")?.trim();
   const order = firstParam(input, "order")?.trim();
   const format = firstParam(input, "format")?.trim();
+  const banned = validBanned(firstParam(input, "banned")?.trim());
 
   // Picker/dropdown values - the only source of these four facets.
   const faction = allParams(input, "faction");
@@ -119,6 +127,7 @@ export function parseAdvancedCardSearchParams(
     keyword,
     pack,
     format: format ? format : undefined,
+    banned,
     // orderColumn() is an own-property lookup: `order=constructor` /
     // `__proto__` used to pass an `in` check and then bind a JS function as
     // a parameter (see cards.ts).
@@ -161,12 +170,32 @@ export async function searchCardsAdvanced(
   const text = params.text?.trim() || undefined;
   const fuzzy = params.fuzzy === true;
 
-  const conditions = buildFacetConditions(params);
+  const conditions = await buildFacetConditions(params);
   if (title) {
     conditions.push(textCondition(Prisma.sql`title`, title, fuzzy));
   }
   if (text) {
     conditions.push(textCondition(Prisma.sql`text`, text, fuzzy));
+  }
+
+  // Only applied with `format` (needs a format to pick activeRestrictionId).
+  // banned=0 with a null activeRestrictionId is a no-op; banned=1 in that
+  // case matches nothing, since nothing is banned.
+  const banned = validBanned(params.banned);
+  const formatId = params.format?.trim();
+  if (banned && formatId) {
+    const activeFormat = await prisma.format.findUnique({
+      where: { id: formatId },
+      select: { activeRestrictionId: true },
+    });
+    if (activeFormat?.activeRestrictionId) {
+      const contains = Prisma.sql`(raw->'attributes'->'restrictions'->'banned') @> to_jsonb(${activeFormat.activeRestrictionId}::text)`;
+      conditions.push(
+        banned === "1" ? contains : Prisma.sql`NOT (${contains})`,
+      );
+    } else if (banned === "1") {
+      conditions.push(Prisma.sql`false`);
+    }
   }
 
   const whereSql = conditions.length

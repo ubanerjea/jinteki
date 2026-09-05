@@ -65,6 +65,8 @@ export default async function AdvancedCardResultsPage({
     }),
   );
   if (facets) summaryParts.push(facets);
+  if (params.banned === "1") summaryParts.push("Banned Yes");
+  if (params.banned === "0") summaryParts.push("Banned No");
   if (params.fuzzy) summaryParts.push("Fuzzy matching on");
 
   return (

@@ -167,6 +167,18 @@ const LEGACY_NAME_SUFFIX = " (ignore active date)";
  * newest-first by dateStart, matching /formats/[id]'s existing query) - this
  * function doesn't re-sort.
  */
+export function partitionRestrictionHistory(
+  history: RestrictionHistoryEntry[],
+): {
+  current: RestrictionHistoryEntry[];
+  past: RestrictionHistoryEntry[];
+} {
+  return {
+    current: history.filter((entry) => entry.status !== "past"),
+    past: history.filter((entry) => entry.status === "past"),
+  };
+}
+
 export function classifyRestrictionHistory(
   format: FormatLike,
   restrictions: RestrictionLike[],

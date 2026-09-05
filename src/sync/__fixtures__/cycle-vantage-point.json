@@ -1,0 +1,16 @@
+{
+  "id": "vantage_point",
+  "type": "card_cycles",
+  "attributes": {
+    "name": "Vantage Point",
+    "date_release": "2026-03-02",
+    "legacy_code": "vantage-point",
+    "card_set_ids": ["vantage_point"],
+    "first_printing_id": "36001",
+    "position": 35,
+    "released_by": "null_signal_games",
+    "updated_at": "2026-08-12T01:54:28+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/card_cycles/vantage_point" }
+}

@@ -31,6 +31,10 @@ describe("describeFacets", () => {
     expect(describeFacets({ keyword: "virus" })[0].label).toBe("Subtype");
   });
 
+  it("labels pack as Set", () => {
+    expect(describeFacets({ pack: "core_set" })[0].label).toBe("Set");
+  });
+
   it("collects repeated values for one facet", () => {
     expect(describeFacets({ type: ["event", "program"] })).toEqual([
       { key: "type", label: "Type", values: ["Event", "Program"] },

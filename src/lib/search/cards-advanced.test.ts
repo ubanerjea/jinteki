@@ -12,6 +12,7 @@ import {
   parseAdvancedCardSearchParams,
   searchCardsAdvanced,
 } from "./cards-advanced";
+import { getFormatCardStatus } from "./format-cards";
 
 afterAll(async () => {
   await prisma.$disconnect();
@@ -190,6 +191,20 @@ describe("parseAdvancedCardSearchParams", () => {
     expect(parseAdvancedCardSearchParams({ pageSize: "999999" }).pageSize).toBe(
       100,
     );
+  });
+
+  describe("banned", () => {
+    it("accepts only '1' or '0'", () => {
+      expect(parseAdvancedCardSearchParams({ banned: "1" }).banned).toBe("1");
+      expect(parseAdvancedCardSearchParams({ banned: "0" }).banned).toBe("0");
+    });
+
+    it("treats blank or garbage as Ignore", () => {
+      expect(parseAdvancedCardSearchParams({}).banned).toBeUndefined();
+      expect(parseAdvancedCardSearchParams({ banned: "" }).banned).toBeUndefined();
+      expect(parseAdvancedCardSearchParams({ banned: "yes" }).banned).toBeUndefined();
+      expect(parseAdvancedCardSearchParams({ banned: "true" }).banned).toBeUndefined();
+    });
   });
 });
 
@@ -463,5 +478,68 @@ describe("searchCardsAdvanced (real DB)", () => {
     const result = await searchCardsAdvanced({});
     expect(result.total).toBe(2054);
     expect(result.items).toHaveLength(30);
+  });
+
+  describe("pack= any-printing, OR within the facet", () => {
+    it("pack=system_gateway is 77 via card_set_ids, not 75 packCode", async () => {
+      const result = await searchCardsAdvanced({
+        pack: ["system_gateway"],
+        pageSize: 1,
+      });
+      expect(result.total).toBe(77);
+    });
+
+    it("several pack= values are OR'd (any of these sets)", async () => {
+      const gateway = await searchCardsAdvanced({
+        pack: ["system_gateway"],
+        pageSize: 1,
+      });
+      const vantage = await searchCardsAdvanced({
+        pack: ["vantage_point"],
+        pageSize: 1,
+      });
+      const both = await searchCardsAdvanced({
+        pack: ["system_gateway", "vantage_point"],
+        pageSize: 1,
+      });
+      expect(both.total).toBeGreaterThanOrEqual(gateway.total);
+      expect(both.total).toBeGreaterThanOrEqual(vantage.total);
+      expect(both.total).toBeLessThanOrEqual(gateway.total + vantage.total);
+    });
+  });
+
+  describe("banned, only with format", () => {
+    it("format=standard&banned=1 equals getFormatCardStatus's banned codes", async () => {
+      const standard = await prisma.format.findUniqueOrThrow({
+        where: { id: "standard" },
+        select: { activeRestrictionId: true },
+      });
+      const status = await getFormatCardStatus(standard.activeRestrictionId);
+      expect(status.banned).toHaveLength(29);
+
+      const result = await searchCardsAdvanced({
+        format: "standard",
+        banned: "1",
+        pageSize: 100,
+      });
+      expect(result.total).toBe(29);
+      expect(result.items.map((c) => c.code).sort()).toEqual(
+        status.banned.map((c) => c.code).sort(),
+      );
+    });
+
+    it("format=standard&banned=0 is the current pool minus banned", async () => {
+      const result = await searchCardsAdvanced({
+        format: "standard",
+        banned: "0",
+        pageSize: 1,
+      });
+      expect(result.total).toBe(584);
+    });
+
+    it("banned=1 without format is a no-op (unfiltered total)", async () => {
+      const result = await searchCardsAdvanced({ banned: "1", pageSize: 1 });
+      expect(result.total).toBe(2054);
+    });
   });
 });

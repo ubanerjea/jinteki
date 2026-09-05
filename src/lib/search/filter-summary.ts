@@ -10,7 +10,7 @@
 //     another route.
 //
 // Deliberately no data access: labels come from formatCode() on the codes
-// already present in the URL, so the note costs no query. Pack and format
+// already present in the URL, so the note costs no query. Set and format
 // codes ("core_set", "system_gateway") format into readable names that way
 // too, which is why neither needs its display row looked up.
 
@@ -33,7 +33,7 @@ export const FACET_PARAMS: { key: string; label: string }[] = [
   { key: "side", label: "Side" },
   { key: "type", label: "Type" },
   { key: "keyword", label: "Subtype" },
-  { key: "pack", label: "Pack" },
+  { key: "pack", label: "Set" },
   { key: "format", label: "Format" },
 ];
 

@@ -1,0 +1,16 @@
+{
+  "id": "borealis",
+  "type": "card_cycles",
+  "attributes": {
+    "name": "Borealis",
+    "date_release": "2022-07-22",
+    "legacy_code": "borealis",
+    "card_set_ids": ["midnight_sun_booster_pack", "midnight_sun", "parhelion"],
+    "first_printing_id": "32001",
+    "position": 32,
+    "released_by": "null_signal_games",
+    "updated_at": "2026-08-12T01:54:28+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/card_cycles/borealis" }
+}

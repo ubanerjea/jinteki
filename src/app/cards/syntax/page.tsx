@@ -281,6 +281,36 @@ export default function SearchSyntaxPage() {
         </ul>
       </Section>
 
+      <Section title="Advanced-results query params">
+        <p className="text-sm">
+          These are not simple-search prefixes — there is no <code>b:</code>.
+          They only apply on{" "}
+          <Link href="/cards/advanced/results" className="underline">
+            advanced results
+          </Link>{" "}
+          URLs.
+        </p>
+        <p className="text-sm">
+          <code>banned=1</code> / <code>banned=0</code> requires{" "}
+          <code>format=</code>. It filters the format&apos;s current card pool
+          to cards that are / are not on that format&apos;s active ban list.
+          Restricted and points cards stay in; they are still legal.
+        </p>
+        <ul className="ml-5 list-disc text-sm text-zinc-600 dark:text-zinc-400">
+          <li>
+            <code>format=standard</code> — 613 cards in Standard&apos;s current
+            pool.
+          </li>
+          <li>
+            <code>format=standard&amp;banned=1</code> — 29 currently banned.
+          </li>
+          <li>
+            <code>format=standard&amp;banned=0</code> — 584 currently legal
+            (pool minus banned).
+          </li>
+        </ul>
+      </Section>
+
       <Section title="Not supported">
         <p className="text-sm">
           None of the following do anything special. They are searched as

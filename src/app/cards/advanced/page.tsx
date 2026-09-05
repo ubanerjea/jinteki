@@ -74,7 +74,12 @@ export default async function AdvancedCardSearchPage({
   // here.
   const [prefixOptions, packs, formats] = await Promise.all([
     getPrefixOptions(),
-    prisma.pack.findMany({ orderBy: { name: "asc" } }),
+    prisma.pack.findMany({
+      orderBy: [
+        { dateRelease: { sort: "desc", nulls: "last" } },
+        { name: "asc" },
+      ],
+    }),
     prisma.format.findMany({ orderBy: { name: "asc" } }),
   ]);
 
@@ -238,13 +243,17 @@ export default async function AdvancedCardSearchPage({
           />
         </Row>
 
-        <Row label="Pack" hint="Pick one or more. Several means any of them.">
+        {params.banned && (
+          <input type="hidden" name="banned" value={params.banned} />
+        )}
+
+        <Row label="Set" hint="Pick one or more. Several means any of them.">
           <FacetPicker
             name="pack"
-            label="Pack"
+            label="Set"
             options={packOptions}
             selected={params.pack}
-            placeholder="Any pack"
+            placeholder="Any set"
           />
         </Row>
 

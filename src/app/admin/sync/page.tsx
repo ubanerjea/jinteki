@@ -14,7 +14,7 @@ import { SyncTriggerButton } from "./sync-trigger-button";
 export const dynamic = "force-dynamic";
 
 const SYNC_TYPES: { urlType: string; type: SyncType; label: string }[] = [
-  { urlType: "factions-packs", type: SyncType.FACTIONS_PACKS, label: "Factions + Packs" },
+  { urlType: "factions-packs", type: SyncType.FACTIONS_PACKS, label: "Factions + Sets + Cycles" },
   { urlType: "cards", type: SyncType.CARDS, label: "Cards" },
   { urlType: "decklists", type: SyncType.DECKLISTS, label: "Decklists" },
   { urlType: "rulings", type: SyncType.RULINGS, label: "Rulings" },

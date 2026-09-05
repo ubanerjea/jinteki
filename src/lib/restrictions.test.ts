@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyRestrictionHistory,
   computeCardLegality,
+  partitionRestrictionHistory,
   summarizeLegality,
 } from "./restrictions";
 
@@ -263,5 +264,17 @@ describe("classifyRestrictionHistory", () => {
 
   it("empty restriction list -> empty result", () => {
     expect(classifyRestrictionHistory(standard, [])).toEqual([]);
+  });
+
+  it("partitionRestrictionHistory keeps active/scheduled outside, past inside", () => {
+    const history = classifyRestrictionHistory(standard, [
+      balanceUpdate2608,
+      banList2605,
+      banList2603,
+      banList2512,
+    ]);
+    const { current, past } = partitionRestrictionHistory(history);
+    expect(current.map((e) => e.status)).toEqual(["scheduled", "scheduled", "active"]);
+    expect(past.map((e) => e.restriction.id)).toEqual(["standard_ban_list_25_12"]);
   });
 });

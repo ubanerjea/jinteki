@@ -1,0 +1,18 @@
+{
+  "id": "parhelion",
+  "type": "card_sets",
+  "attributes": {
+    "name": "Parhelion",
+    "date_release": "2022-12-09",
+    "size": 63,
+    "card_cycle_id": "borealis",
+    "card_set_type_id": "data_pack",
+    "legacy_code": "ph",
+    "position": 3,
+    "first_printing_id": "33066",
+    "released_by": "null_signal_games",
+    "updated_at": "2026-08-12T01:54:28+00:00"
+  },
+  "relationships": {},
+  "links": { "self": "https://api.netrunnerdb.com/api/v3/public/card_sets/parhelion" }
+}

@@ -138,14 +138,14 @@ export function likePattern(term: string): string {
 // Every value stays inside a `Prisma.sql` tagged template (auto-
 // parameterized) - never `$queryRawUnsafe` or string concatenation, per this
 // file's header rule.
-export function buildFacetConditions(params: {
+export async function buildFacetConditions(params: {
   faction?: string | string[];
   side?: string;
   type?: string | string[];
   keyword?: string | string[];
   pack?: string | string[];
   format?: string;
-}): Prisma.Sql[] {
+}): Promise<Prisma.Sql[]> {
   const conditions: Prisma.Sql[] = [];
 
   // `undefined` / `""` / `[]` all mean "no filter"; a one-element array is
@@ -186,29 +186,41 @@ export function buildFacetConditions(params: {
     conditions.push(Prisma.sql`"keywords" && ${keywords}`);
   }
 
-  // Item 1 (PHASE_6_PLAN.md): identical equality-filter pattern to
-  // faction/side/type above - no new pattern introduced.
-  scalarColumn(Prisma.sql`"packCode"`, normalize(params.pack));
+  // Any printing, not original-only packCode. Several values are OR'd
+  // (FacetPicker "any of these"), same as the other multi-value facets.
+  const packs = normalize(params.pack);
+  if (packs.length === 1) {
+    conditions.push(
+      Prisma.sql`(raw->'attributes'->'card_set_ids') @> to_jsonb(${packs[0]}::text)`,
+    );
+  } else if (packs.length > 1) {
+    conditions.push(
+      Prisma.sql`(${Prisma.join(
+        packs.map(
+          (code) =>
+            Prisma.sql`(raw->'attributes'->'card_set_ids') @> to_jsonb(${code}::text)`,
+        ),
+        " OR ",
+      )})`,
+    );
+  }
 
   const formats = normalize(params.format);
   if (formats.length > 0) {
-    // Option A (format-descriptions-links-and-search-plan.md §5): filter by
-    // format *membership* ("is this card in format X's pool at all"), not
-    // "currently legal in X" (Option B - materially harder, deferred). No
-    // native Card.formatIds column exists - format_ids lives inside
-    // Card.raw, so this is a JSONB containment check (`@>`) rather than the
-    // `= ANY(...)` pattern the keyword filter above uses against a real
-    // String[] column. `to_jsonb(...)` converts the bound parameter into the
-    // JSONB-scalar shape `@>` needs, keeping it a properly Prisma-
-    // parameterized value (never raw string concatenation, per this file's
-    // header). Confirmed working and performant (13ms unindexed sequential
-    // scan against the real 2054-row table) in the plan's §2b investigation.
-    // `format` is single-valued on both pages, so only the first value is
-    // used - a set would need an OR of containment checks, which nothing
-    // asks for.
-    conditions.push(
-      Prisma.sql`(raw->'attributes'->'format_ids') @> to_jsonb(${formats[0]}::text)`,
-    );
+    // Current-pool membership: Format.activeCardPoolId against
+    // card_pool_ids, not historical format_ids. Unknown format id or a
+    // null activeCardPoolId matches nothing - there is no current pool.
+    const activeFormat = await prisma.format.findUnique({
+      where: { id: formats[0] },
+      select: { activeCardPoolId: true },
+    });
+    if (activeFormat?.activeCardPoolId) {
+      conditions.push(
+        Prisma.sql`(raw->'attributes'->'card_pool_ids') @> to_jsonb(${activeFormat.activeCardPoolId}::text)`,
+      );
+    } else {
+      conditions.push(Prisma.sql`false`);
+    }
   }
 
   return conditions;
@@ -303,7 +315,7 @@ export async function searchCards(
   // searchCards() receives is a scalar, which the helper renders as the same
   // `=` / `= ANY("keywords")` / `@>` conditions this function issued inline
   // before.
-  const conditions: Prisma.Sql[] = buildFacetConditions(params);
+  const conditions: Prisma.Sql[] = await buildFacetConditions(params);
   if (q) {
     // `<%` is pg_trgm's word-similarity operator (true when
     // word_similarity(q, column) exceeds pg_trgm.word_similarity_threshold,

@@ -46,10 +46,28 @@ model Faction {
   cards Card[]
 }
 
-model Pack {
-  code String @id
-  name String
+model Cycle {
+  id          String    @id // NRDB card_cycles id, e.g. "borealis"
+  name        String
+  dateRelease DateTime?
+  position    Int?
+  raw         Json
 
+  packs Pack[]
+}
+
+model Pack {
+  code          String    @id
+  name          String
+  dateRelease   DateTime?
+  size          Int?
+  // Nullable so a first-ever packs-before-cycles ordering cannot fail a NOT NULL.
+  cardCycleId   String?
+  cardSetTypeId String?
+  position      Int?
+  raw           Json?
+
+  cycle Cycle? @relation(fields: [cardCycleId], references: [id])
   cards Card[]
 }
 
@@ -336,8 +354,8 @@ model Restriction {
 // ---------------------------------------------------------------------------
 // Card pools ("rotation" data) — Phase 10 §2. Populated by
 // src/sync/sync-card-pools.ts from NRDB's `card_pools` resource - a
-// DIFFERENT resource from `card_sets` (which `Pack` already maps to, see
-// sync-factions-packs.ts's header comment) and from `card_cycles`. A
+// DIFFERENT resource from `card_sets` (Pack) and from `card_cycles` (Cycle).
+// A
 // `CardPool` is one named, dated-or-undated snapshot of "every card cycle
 // legal in format X as of this pool" (e.g. Standard's "Seventh Rotation",
 // "Pre Rotation", or the currently-active "Standard 2026 - Vantage Point").

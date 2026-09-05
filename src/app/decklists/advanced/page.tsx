@@ -66,7 +66,12 @@ export default async function AdvancedDecklistSearchPage({
 
   const [prefixOptions, packs, identities, cards, formats, rotations] = await Promise.all([
     getPrefixOptions(),
-    prisma.pack.findMany({ orderBy: { name: "asc" } }),
+    prisma.pack.findMany({
+      orderBy: [
+        { dateRelease: { sort: "desc", nulls: "last" } },
+        { name: "asc" },
+      ],
+    }),
     // Only identities actually used by at least one decklist - the same
     // relational filter /decklists' old hybrid page already ran, moved into
     // this page's data-fetching per PHASE_8_PLAN.md item 3.
@@ -273,15 +278,15 @@ export default async function AdvancedDecklistSearchPage({
         </Row>
 
         <Row
-          label="Pack"
-          hint="Decks containing at least one card from any of the selected packs."
+          label="Set"
+          hint="Decks containing at least one card from any of the selected sets."
         >
           <FacetPicker
             name="pack"
-            label="Pack"
+            label="Set"
             options={packOptions}
             selected={params.pack}
-            placeholder="Any pack"
+            placeholder="Any set"
           />
         </Row>
 

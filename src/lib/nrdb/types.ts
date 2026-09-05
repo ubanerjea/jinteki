@@ -63,11 +63,25 @@ export interface CardSetAttributes {
   size: number | null;
   card_cycle_id: string;
   card_set_type_id: string;
+  position?: number | null;
   updated_at: string;
   [key: string]: unknown;
 }
 
 export type CardSetResource = JsonApiResource<"card_sets", CardSetAttributes>;
+
+// --- card_cycles -------------------------------------------------------
+
+export interface CycleAttributes {
+  name: string;
+  date_release: string | null;
+  card_set_ids: string[];
+  position?: number | null;
+  updated_at: string;
+  [key: string]: unknown;
+}
+
+export type CycleResource = JsonApiResource<"card_cycles", CycleAttributes>;
 
 // --- cards ---------------------------------------------------------------
 // NRDB v3 "cards" are the abstracted card (one row per unique card across

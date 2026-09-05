@@ -1,19 +1,23 @@
-// Syncs Faction and Pack rows from NRDB. Runs first in the dependency chain
-// (factions + packs -> cards -> decklists -> rulings) since `Card` has FK
-// dependencies on both `Faction` and `Pack`.
+// Syncs Faction, Cycle, and Pack rows from NRDB. Runs first in the
+// dependency chain (factions + cycles + packs -> cards -> decklists ->
+// rulings) since `Card` has FK dependencies on `Faction` and `Pack`, and
+// `Pack.cardCycleId` FKs to `Cycle`.
 //
 // NRDB's v3 API calls packs "card_sets" (e.g. "Core Set", "Kala Ghoda
-// Shard") - distinct from "card_cycles", which group multiple card_sets
-// together (e.g. the "Genesis" cycle contains six data packs). Our schema's
-// `Pack` model matches card_sets one-to-one; cycles aren't synced/stored
-// since nothing in the schema needs them.
+// Shard") and groups them into "card_cycles" (e.g. Borealis contains
+// Midnight Sun, Parhelion, and the Midnight Sun Booster Pack). Our `Pack`
+// model matches card_sets one-to-one; `Cycle` matches card_cycles.
 
 import { fileURLToPath } from "node:url";
 
 import { SyncType, type Prisma } from "@prisma/client";
 
 import { fetchAll } from "@/lib/nrdb/client";
-import type { CardSetResource, FactionResource } from "@/lib/nrdb/types";
+import type {
+  CardSetResource,
+  CycleResource,
+  FactionResource,
+} from "@/lib/nrdb/types";
 import { prisma } from "@/lib/prisma";
 
 import { withSyncRun } from "./sync-run";
@@ -31,11 +35,37 @@ export function mapFaction(
   return { code: id, description };
 }
 
+export function mapCycle(
+  resource: CycleResource,
+): Prisma.CycleUncheckedCreateInput {
+  const { id, attributes } = resource;
+  return {
+    id,
+    name: attributes.name,
+    dateRelease: attributes.date_release
+      ? new Date(attributes.date_release)
+      : null,
+    position: attributes.position ?? null,
+    raw: JSON.parse(JSON.stringify(resource)) as Prisma.InputJsonValue,
+  };
+}
+
 export function mapPack(
   resource: CardSetResource,
 ): Prisma.PackUncheckedCreateInput {
   const { id, attributes } = resource;
-  return { code: id, name: attributes.name };
+  return {
+    code: id,
+    name: attributes.name,
+    dateRelease: attributes.date_release
+      ? new Date(attributes.date_release)
+      : null,
+    size: attributes.size ?? null,
+    cardCycleId: attributes.card_cycle_id || null,
+    cardSetTypeId: attributes.card_set_type_id || null,
+    position: attributes.position ?? null,
+    raw: JSON.parse(JSON.stringify(resource)) as Prisma.InputJsonValue,
+  };
 }
 
 export async function runFactionsPacksSync() {
@@ -47,6 +77,18 @@ export async function runFactionsPacksSync() {
       const data = mapFaction(resource);
       await prisma.faction.upsert({
         where: { code: data.code },
+        update: data,
+        create: data,
+      });
+    }
+
+    const cycles = await fetchAll<CycleResource>("/card_cycles", {
+      pageSize: 100,
+    });
+    for (const resource of cycles) {
+      const data = mapCycle(resource);
+      await prisma.cycle.upsert({
+        where: { id: data.id },
         update: data,
         create: data,
       });
@@ -64,7 +106,17 @@ export async function runFactionsPacksSync() {
       });
     }
 
-    return factions.length + packs.length;
+    // Upsert never removes a row NRDB has since deleted. Packs are not
+    // deleted here: Card.packCode still FKs to Pack, and this sync runs
+    // before cards. Cycles with no remaining packs can go.
+    await prisma.cycle.deleteMany({
+      where: {
+        id: { notIn: cycles.map((c) => c.id) },
+        packs: { none: {} },
+      },
+    });
+
+    return factions.length + cycles.length + packs.length;
   });
 }
 

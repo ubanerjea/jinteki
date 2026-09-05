@@ -3,8 +3,21 @@ import { notFound } from "next/navigation";
 
 import { CardReference } from "@/components/card-reference";
 import { DecklistFavoriteToggle } from "@/components/favorite-toggle-form";
-import { compareByType, ORDER_COMPARATORS } from "@/lib/decklist-card-order";
+import {
+  compareBySet,
+  compareByType,
+  ORDER_COMPARATORS,
+} from "@/lib/decklist-card-order";
 import { plainTextFromNotes } from "@/lib/decklist-notes";
+import {
+  cardInfluenceUsed,
+  deckAgendaPoints,
+  deckInfluenceUsed,
+  groupDecklistCards,
+  influenceLimit,
+  influencePips,
+  sectionTitle,
+} from "@/lib/decklist-view";
 import { formatCode } from "@/lib/format";
 import type { DecklistResource } from "@/lib/nrdb/types";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +38,6 @@ export default async function DecklistDetailPage({
   const { id } = await params;
   const rawParams = await searchParams;
   const order = firstParam(rawParams, "order")?.trim();
-  const compare = (order && ORDER_COMPARATORS[order]) || compareByType;
 
   const decklist = await prisma.decklist.findUnique({
     where: { id },
@@ -48,21 +60,42 @@ export default async function DecklistDetailPage({
       )
     : false;
 
-  // NRDB's own `card_slots` data includes the identity as a slot (confirmed
-  // directly against raw decklist JSON: `num_cards` matches the slot-quantity
-  // sum only when the identity's row is excluded) - a faithful sync, but the
-  // identity is already shown above, so exclude it here to avoid showing it
-  // twice in the deck's card list.
   const deckCards = decklist.cards.filter(
     (dc) => dc.cardCode !== decklist.identityCode,
   );
 
+  const packCodes = [
+    ...new Set(
+      deckCards
+        .map((dc) => dc.card.packCode)
+        .filter((code): code is string => Boolean(code)),
+    ),
+  ];
+  const packs = await prisma.pack.findMany({
+    where: { code: { in: packCodes } },
+    select: { code: true, name: true, dateRelease: true },
+  });
+  const packMeta = new Map(
+    packs.map((pack) => [
+      pack.code,
+      { dateRelease: pack.dateRelease, name: pack.name },
+    ]),
+  );
+  const packNames = new Map(packs.map((pack) => [pack.code, pack.name]));
+
+  const compare =
+    order === "set"
+      ? compareBySet(packMeta)
+      : (order && ORDER_COMPARATORS[order]) || compareByType;
+
   const sortedCards = [...deckCards].sort(compare);
   const totalCards = sortedCards.reduce((sum, dc) => sum + dc.quantity, 0);
+  const identityFaction = decklist.identity.factionCode;
+  const usedInfluence = deckInfluenceUsed(sortedCards, identityFaction);
+  const limit = influenceLimit(decklist.identity.raw);
+  const isCorp = decklist.identity.sideCode === "corp";
+  const agendaPoints = isCorp ? deckAgendaPoints(sortedCards) : null;
 
-  // Items 3/4: author, creation date, and free-text notes - same
-  // cast-and-read-from-raw pattern /cards/[code] already uses for
-  // `attributes` (no new abstraction needed for a handful of fields).
   const attributes = (decklist.raw as { attributes?: DecklistResource["attributes"] })
     .attributes;
   const createdAt = attributes?.created_at
@@ -72,9 +105,6 @@ export default async function DecklistDetailPage({
   const notesHtml = attributes?.notes?.trim() || null;
   const notesText = notesHtml ? plainTextFromNotes(notesHtml) : null;
 
-  // Item 7: plain links (not a <select>/form), mirroring /cards' List/Grid
-  // toggle precedent - a small local href-builder rather than a shared
-  // abstraction, since this is the only other use site so far.
   function orderHref(value: string): string {
     const params = new URLSearchParams();
     for (const [key, v] of Object.entries(rawParams)) {
@@ -89,12 +119,72 @@ export default async function DecklistDetailPage({
     const qs = params.toString();
     return qs ? `?${qs}` : "";
   }
-  const activeOrder = order && order in ORDER_COMPARATORS ? order : "type";
+  const activeOrder =
+    order === "set" || (order && order in ORDER_COMPARATORS) ? order : "type";
   const orderLinks: { value: string; label: string }[] = [
     { value: "type", label: "Type" },
     { value: "faction", label: "Faction" },
+    { value: "set", label: "Set" },
     { value: "name", label: "Name" },
   ];
+
+  const influenceLabel =
+    limit != null
+      ? `Influence: ${influencePips(usedInfluence)}${usedInfluence > 0 ? " " : ""}${usedInfluence}/${limit}`
+      : `Influence: ${influencePips(usedInfluence)}${usedInfluence > 0 ? " " : ""}${usedInfluence}`;
+
+  function cardRow(
+    dc: (typeof sortedCards)[number],
+  ) {
+    const packName = dc.card.packCode
+      ? packNames.get(dc.card.packCode)
+      : undefined;
+    const pips = influencePips(
+      cardInfluenceUsed(dc.card, identityFaction, dc.quantity),
+    );
+    return (
+      <li
+        key={dc.cardCode}
+        className="flex items-center justify-between gap-3 py-1.5"
+      >
+        <CardReference code={dc.cardCode}>
+          <Link href={`/cards/${dc.cardCode}`} className="underline">
+            {dc.card.title}
+          </Link>
+        </CardReference>
+        <span className="flex shrink-0 items-center gap-3 text-sm text-zinc-500">
+          {packName && <span>{packName}</span>}
+          <span>
+            {formatCode(dc.card.factionCode)} - {formatCode(dc.card.typeCode)} -{" "}
+            {formatCode(dc.card.sideCode)}
+          </span>
+          {pips && <span>{pips}</span>}
+          <span>x{dc.quantity}</span>
+        </span>
+      </li>
+    );
+  }
+
+  const grouped =
+    activeOrder === "name"
+      ? null
+      : groupDecklistCards(
+          sortedCards,
+          (dc) =>
+            activeOrder === "faction"
+              ? dc.card.factionCode
+              : activeOrder === "set"
+                ? (dc.card.packCode ?? "")
+                : dc.card.typeCode,
+          (dc) =>
+            activeOrder === "faction"
+              ? formatCode(dc.card.factionCode)
+              : activeOrder === "set"
+                ? (dc.card.packCode
+                    ? (packNames.get(dc.card.packCode) ?? formatCode(dc.card.packCode))
+                    : "Unknown")
+                : formatCode(dc.card.typeCode),
+        );
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-10">
@@ -123,13 +213,14 @@ export default async function DecklistDetailPage({
             ({formatCode(decklist.identity.factionCode)})
           </p>
           <p className="text-sm text-zinc-500">
-            {totalCards} card{totalCards === 1 ? "" : "s"} total
+            {totalCards} card{totalCards === 1 ? "" : "s"}
           </p>
-          {/* Item 3: author + creation date, inert text (not a link into
-              jinteki - user_id is an NRDB user id, no synced NRDB-user table
-              to join against). The NRDB permalink is a deliberate, narrow
-              exception to "don't link out" - it links to the canonical
-              source record itself, not a substitute for in-house content. */}
+          <p className="text-sm text-zinc-500">{influenceLabel}</p>
+          {agendaPoints != null && (
+            <p className="text-sm text-zinc-500">
+              Agenda points: {agendaPoints}
+            </p>
+          )}
           {(createdAt || userId) && (
             <p className="text-xs text-zinc-400">
               {createdAt && <>Submitted {createdAt}</>}
@@ -150,9 +241,6 @@ export default async function DecklistDetailPage({
         <DecklistFavoriteToggle id={decklist.id} favorited={favorited} />
       </div>
 
-      {/* Item 4: notes/description, rendered as sanitized plain text - see
-          src/lib/decklist-notes.ts for why this isn't renderCardText() or
-          dangerouslySetInnerHTML. */}
       {notesText && (
         <p className="whitespace-pre-line rounded border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
           {notesText}
@@ -181,21 +269,24 @@ export default async function DecklistDetailPage({
         </p>
       </div>
 
-      <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
-        {sortedCards.map((dc) => (
-          <li
-            key={dc.cardCode}
-            className="flex items-center justify-between py-1.5"
-          >
-            <CardReference code={dc.cardCode}>
-              <Link href={`/cards/${dc.cardCode}`} className="underline">
-                {dc.card.title}
-              </Link>
-            </CardReference>
-            <span className="text-sm text-zinc-500">x{dc.quantity}</span>
-          </li>
-        ))}
-      </ul>
+      {grouped ? (
+        <div className="flex flex-col gap-4">
+          {grouped.map((group) => (
+            <section key={group.key} className="flex flex-col gap-1">
+              <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+                {sectionTitle(group.heading, group.quantitySum)}
+              </h3>
+              <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+                {group.cards.map(cardRow)}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+          {sortedCards.map(cardRow)}
+        </ul>
+      )}
     </main>
   );
 }

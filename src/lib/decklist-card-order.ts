@@ -6,7 +6,17 @@
 // function rather than an inline arrow").
 
 export type DeckCardLike = {
-  card: { typeCode: string; title: string; factionCode: string };
+  card: {
+    typeCode: string;
+    title: string;
+    factionCode: string;
+    packCode?: string | null;
+  };
+};
+
+export type PackSortMeta = {
+  dateRelease: Date | null;
+  name: string;
 };
 
 // Original/default behavior (unchanged from before item 7): group by type,
@@ -27,6 +37,30 @@ export function compareByFaction(a: DeckCardLike, b: DeckCardLike): number {
 
 export function compareByName(a: DeckCardLike, b: DeckCardLike): number {
   return a.card.title.localeCompare(b.card.title);
+}
+
+export function compareBySet(
+  packMeta: Map<string, PackSortMeta>,
+): (a: DeckCardLike, b: DeckCardLike) => number {
+  return (a, b) => {
+    const packA = a.card.packCode ? packMeta.get(a.card.packCode) : undefined;
+    const packB = b.card.packCode ? packMeta.get(b.card.packCode) : undefined;
+    const dateA = packA?.dateRelease ?? null;
+    const dateB = packB?.dateRelease ?? null;
+    if (dateA && dateB) {
+      const byDate = dateB.getTime() - dateA.getTime();
+      if (byDate !== 0) return byDate;
+    } else if (dateA) {
+      return -1;
+    } else if (dateB) {
+      return 1;
+    }
+    const byName = (packA?.name ?? a.card.packCode ?? "").localeCompare(
+      packB?.name ?? b.card.packCode ?? "",
+    );
+    if (byName !== 0) return byName;
+    return a.card.title.localeCompare(b.card.title);
+  };
 }
 
 // Keyed by the `order` URL param's value - matching /cards' `order` param

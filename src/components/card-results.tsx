@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CardReference } from "@/components/card-reference";
 import { getCardImageUrl } from "@/lib/card-image";
 import { formatCode } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
 import type { CardSummary } from "@/lib/search/cards";
 import type { SearchParamsInput } from "@/lib/search/types";
 
@@ -55,13 +56,23 @@ export function hrefWithOverrides(
   return qs ? `${basePath}?${qs}` : basePath;
 }
 
-export function CardResultsList({
+export async function CardResultsList({
   items,
   view,
 }: {
   items: CardSummary[];
   view: View;
 }) {
+  const packNames =
+    view === "list"
+      ? new Map(
+          (
+            await prisma.pack.findMany({
+              select: { code: true, name: true },
+            })
+          ).map((pack) => [pack.code, pack.name]),
+        )
+      : new Map<string, string>();
   if (view === "names") {
     // Item 5: maximum-density mode - just linked titles, no metadata at
     // all, wrapped in a flex layout (closest analog to NRDB's own
@@ -111,19 +122,30 @@ export function CardResultsList({
   if (view === "list") {
     return (
       <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
-        {items.map((card) => (
-          <li key={card.code} className="flex items-center justify-between py-2">
-            <CardReference code={card.code}>
-              <Link href={`/cards/${card.code}`} className="font-medium underline">
-                {card.title}
-              </Link>
-            </CardReference>
-            <span className="text-sm text-zinc-500">
-              {formatCode(card.factionCode)} - {formatCode(card.typeCode)} -{" "}
-              {formatCode(card.sideCode)}
-            </span>
-          </li>
-        ))}
+        {items.map((card) => {
+          const packName = card.packCode
+            ? packNames.get(card.packCode)
+            : undefined;
+          return (
+            <li
+              key={card.code}
+              className="flex items-center justify-between gap-3 py-2"
+            >
+              <CardReference code={card.code}>
+                <Link href={`/cards/${card.code}`} className="font-medium underline">
+                  {card.title}
+                </Link>
+              </CardReference>
+              <span className="flex shrink-0 items-center gap-3 text-sm text-zinc-500">
+                {packName && <span>{packName}</span>}
+                <span>
+                  {formatCode(card.factionCode)} - {formatCode(card.typeCode)} -{" "}
+                  {formatCode(card.sideCode)}
+                </span>
+              </span>
+            </li>
+          );
+        })}
         {items.length === 0 && (
           <li className="py-4 text-sm text-zinc-500">No cards match this search.</li>
         )}

@@ -359,37 +359,57 @@ describe("searchCards (real DB)", () => {
     }
   });
 
-  // Phase 6 item 1: pack filter.
+  // Phase 6 item 1 / Phase 11: pack filter matches any printing via
+  // card_set_ids, not original-printing packCode.
   describe("pack filter", () => {
-    it("matches a direct count using packCode equality", async () => {
-      const directCount = await prisma.card.count({
-        where: { packCode: "core_set" },
-      });
+    it("matches a direct count using card_set_ids containment", async () => {
+      const directCount = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`SELECT count(*)::bigint AS count FROM "Card" WHERE (raw->'attributes'->'card_set_ids') @> to_jsonb('core_set'::text)`,
+      );
+      const expected = Number(directCount[0].count);
       const result = await searchCards({ pack: "core_set", pageSize: 200 });
-      expect(result.total).toBe(directCount);
+      expect(result.total).toBe(expected);
       expect(result.total).toBeGreaterThan(0);
-      expect(result.items.every((c) => c.packCode === "core_set")).toBe(true);
+    });
+
+    it("pack=system_gateway includes reprints, not just original printings", async () => {
+      const bySetIds = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`SELECT count(*)::bigint AS count FROM "Card" WHERE (raw->'attributes'->'card_set_ids') @> to_jsonb('system_gateway'::text)`,
+      );
+      const byPackCode = await prisma.card.count({
+        where: { packCode: "system_gateway" },
+      });
+      const expected = Number(bySetIds[0].count);
+      expect(expected).toBe(77);
+      expect(byPackCode).toBe(75);
+
+      const result = await searchCards({ pack: "system_gateway", pageSize: 100 });
+      expect(result.total).toBe(expected);
     });
 
     it("combines with faction filter", async () => {
-      const directCount = await prisma.card.count({
-        where: { packCode: "core_set", factionCode: "anarch" },
-      });
+      const directCount = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`SELECT count(*)::bigint AS count FROM "Card" WHERE (raw->'attributes'->'card_set_ids') @> to_jsonb('core_set'::text) AND "factionCode" = 'anarch'`,
+      );
       const result = await searchCards({
         pack: "core_set",
         faction: "anarch",
         pageSize: 200,
       });
-      expect(result.total).toBe(directCount);
+      expect(result.total).toBe(Number(directCount[0].count));
     });
   });
 
-  // format-descriptions-links-and-search-plan.md §5, Option A: format
-  // membership filter (JSONB containment on Card.raw.attributes.format_ids).
+  // Current-pool membership (Format.activeCardPoolId in card_pool_ids).
   describe("format filter", () => {
-    it("matches a direct count using JSONB containment (77 for system_gateway, per the plan's §2b measurement)", async () => {
+    it("matches a direct count using the format's active card pool (77 for system_gateway)", async () => {
       const directCount = await prisma.$queryRaw<{ count: bigint }[]>(
-        Prisma.sql`SELECT count(*)::bigint AS count FROM "Card" WHERE raw->'attributes'->'format_ids' @> '"system_gateway"'::jsonb`,
+        Prisma.sql`
+          SELECT count(*)::bigint AS count FROM "Card"
+          WHERE (raw->'attributes'->'card_pool_ids') @> to_jsonb(
+            (SELECT "activeCardPoolId" FROM "Format" WHERE id = 'system_gateway')
+          )
+        `,
       );
       const expected = Number(directCount[0].count);
       expect(expected).toBe(77);
@@ -398,18 +418,30 @@ describe("searchCards (real DB)", () => {
       expect(result.total).toBe(expected);
     });
 
-    it("every row returned actually has the format in its format_ids", async () => {
+    it("every row returned is in the format's active card pool", async () => {
       const result = await searchCards({ format: "system_gateway", pageSize: 100 });
       const codes = result.items.map((c) => c.code);
       const rows = await prisma.$queryRaw<{ code: string }[]>(
-        Prisma.sql`SELECT code FROM "Card" WHERE code = ANY(${codes}) AND raw->'attributes'->'format_ids' @> '"system_gateway"'::jsonb`,
+        Prisma.sql`
+          SELECT code FROM "Card"
+          WHERE code = ANY(${codes})
+            AND (raw->'attributes'->'card_pool_ids') @> to_jsonb(
+              (SELECT "activeCardPoolId" FROM "Format" WHERE id = 'system_gateway')
+            )
+        `,
       );
       expect(rows.length).toBe(codes.length);
     });
 
     it("combines with faction filter (AND semantics)", async () => {
       const directCount = await prisma.$queryRaw<{ count: bigint }[]>(
-        Prisma.sql`SELECT count(*)::bigint AS count FROM "Card" WHERE raw->'attributes'->'format_ids' @> '"eternal"'::jsonb AND "factionCode" = 'anarch'`,
+        Prisma.sql`
+          SELECT count(*)::bigint AS count FROM "Card"
+          WHERE (raw->'attributes'->'card_pool_ids') @> to_jsonb(
+            (SELECT "activeCardPoolId" FROM "Format" WHERE id = 'eternal')
+          )
+          AND "factionCode" = 'anarch'
+        `,
       );
       const expected = Number(directCount[0].count);
 
@@ -421,20 +453,43 @@ describe("searchCards (real DB)", () => {
       expect(result.total).toBe(expected);
     });
 
-    it("spot-checks the other formats' membership counts against the plan's §2b measurements", async () => {
+    it("format=standard is the current pool, not historical format_ids", async () => {
+      const pool = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`
+          SELECT count(*)::bigint AS count FROM "Card"
+          WHERE (raw->'attributes'->'card_pool_ids') @> to_jsonb(
+            (SELECT "activeCardPoolId" FROM "Format" WHERE id = 'standard')
+          )
+        `,
+      );
+      const expected = Number(pool[0].count);
+      expect(expected).toBe(613);
+
+      const result = await searchCards({ format: "standard", pageSize: 1 });
+      expect(result.total).toBe(expected);
+    });
+
+    it("spot-checks current-pool counts against a direct join on activeCardPoolId", async () => {
       const counts = await prisma.$queryRaw<{ id: string; count: bigint }[]>(
         Prisma.sql`
           SELECT f.id, count(c.code)::bigint AS count
           FROM "Format" f
-          LEFT JOIN "Card" c ON (c.raw->'attributes'->'format_ids') @> to_jsonb(f.id)
+          LEFT JOIN "Card" c
+            ON f."activeCardPoolId" IS NOT NULL
+           AND (c.raw->'attributes'->'card_pool_ids') @> to_jsonb(f."activeCardPoolId")
           WHERE f.id IN ('eternal', 'standard', 'snapshot')
           GROUP BY f.id
         `,
       );
       const byId = Object.fromEntries(counts.map((r) => [r.id, Number(r.count)]));
       expect(byId.eternal).toBe(2017);
-      expect(byId.standard).toBe(2016);
+      expect(byId.standard).toBe(613);
       expect(byId.snapshot).toBe(1181);
+    });
+
+    it("an unknown format id matches nothing", async () => {
+      const result = await searchCards({ format: "not_a_format", pageSize: 1 });
+      expect(result.total).toBe(0);
     });
   });
 

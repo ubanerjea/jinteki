@@ -1,14 +1,49 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { classifyRestrictionHistory } from "@/lib/restrictions";
+import {
+  classifyRestrictionHistory,
+  partitionRestrictionHistory,
+} from "@/lib/restrictions";
 import { getFormatCardStatus } from "@/lib/search/format-cards";
+import {
+  formatReleaseDate,
+  groupSetsByCycle,
+  packSearchHref,
+} from "@/lib/sets";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-// /formats/[id] detail page (format-descriptions-links-and-search-plan.md
-// §4c). notFound() on a missing id, same pattern as /cards/[code]/page.tsx.
+function RestrictionRow({
+  name,
+  dateStart,
+  status,
+}: {
+  name: string;
+  dateStart: Date | null;
+  status: "active" | "scheduled" | "past";
+}) {
+  return (
+    <li className="flex items-center justify-between gap-2 py-2">
+      <span className={status === "active" ? "font-semibold" : ""}>{name}</span>
+      <span className="flex items-center gap-2 text-xs text-zinc-500">
+        {dateStart && dateStart.toISOString().slice(0, 10)}
+        {status === "active" && (
+          <span className="rounded bg-foreground px-1.5 py-0.5 text-background">
+            active
+          </span>
+        )}
+        {status === "scheduled" && (
+          <span className="rounded border border-zinc-400 px-1.5 py-0.5 text-zinc-500 dark:border-zinc-600 dark:text-zinc-400">
+            scheduled
+          </span>
+        )}
+      </span>
+    </li>
+  );
+}
+
 export default async function FormatDetailPage({
   params,
 }: {
@@ -21,23 +56,14 @@ export default async function FormatDetailPage({
     notFound();
   }
 
-  // Restriction history: every ban-list/points-list snapshot this format has
-  // ever had, newest first - classifyRestrictionHistory (PHASE_10_PLAN.md §1)
-  // both excludes NRDB's legacy "(ignore active date)" rows and distinguishes
-  // active/scheduled/past, replacing the old single isActive check that
-  // treated every remaining row the same way.
   const restrictions = await prisma.restriction.findMany({
     where: { formatId: id },
     orderBy: { dateStart: "desc" },
   });
   const restrictionHistory = classifyRestrictionHistory(format, restrictions);
+  const { current: currentRestrictions, past: pastRestrictions } =
+    partitionRestrictionHistory(restrictionHistory);
 
-  // Card pool ("rotation") data - PHASE_10_PLAN.md §2. Unlike Restriction,
-  // card_pools carries no date_start/active flag of its own (confirmed live
-  // 2026-09-04, see prisma/schema.prisma's CardPool comment) - only the
-  // subset that are genuinely one of NSG's seven numbered rotations
-  // (rotationOrdinal not null) gets a "history" list; every format's active
-  // pool (if any) is shown regardless of whether it's a numbered rotation.
   const cardPools = await prisma.cardPool.findMany({ where: { formatId: id } });
   const activeCardPool = format.activeCardPoolId
     ? (cardPools.find((p) => p.id === format.activeCardPoolId) ?? null)
@@ -46,10 +72,39 @@ export default async function FormatDetailPage({
     .filter((p) => p.rotationOrdinal != null)
     .sort((a, b) => (b.rotationOrdinal ?? 0) - (a.rotationOrdinal ?? 0));
 
-  // Stretch goal: which cards are currently banned/restricted/pointed here.
-  // ram/system_gateway have no activeRestrictionId at all (no ban list) -
-  // getFormatCardStatus returns all-empty groups in that case, not an error.
+  const poolCycleIds = activeCardPool?.cardCycleIds ?? [];
+  const poolPacks =
+    poolCycleIds.length > 0
+      ? await prisma.pack.findMany({
+          where: { cardCycleId: { in: poolCycleIds } },
+        })
+      : [];
+  const poolCycles =
+    poolPacks.length > 0
+      ? await prisma.cycle.findMany({
+          where: {
+            id: {
+              in: [
+                ...new Set(
+                  poolPacks
+                    .map((p) => p.cardCycleId)
+                    .filter((cid): cid is string => Boolean(cid)),
+                ),
+              ],
+            },
+          },
+        })
+      : [];
+  const groupedPool = groupSetsByCycle(poolPacks, poolCycles);
+  const showPoolDetails =
+    groupedPool.length > 0 || numberedRotations.length > 0;
+
   const cardStatus = await getFormatCardStatus(format.activeRestrictionId);
+
+  const legalCardsHref = format.activeRestrictionId
+    ? `/cards/advanced/results?format=${id}&banned=0&pageSize=30`
+    : `/cards/advanced/results?format=${id}&pageSize=30`;
+  const bannedCardsHref = `/cards/advanced/results?format=${id}&banned=1&pageSize=30`;
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-10">
@@ -69,37 +124,48 @@ export default async function FormatDetailPage({
             {format.description}
           </p>
         )}
+        <p className="text-sm">
+          <Link href={legalCardsHref} className="underline">
+            View cards currently legal in this format
+          </Link>
+        </p>
       </div>
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">Restriction history</h2>
         {restrictionHistory.length > 0 ? (
-          <ul className="flex flex-col divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            {restrictionHistory.map(({ restriction, status }) => (
-              <li
-                key={restriction.id}
-                className="flex items-center justify-between gap-2 py-2"
-              >
-                <span className={status === "active" ? "font-semibold" : ""}>
-                  {restriction.name}
-                </span>
-                <span className="flex items-center gap-2 text-xs text-zinc-500">
-                  {restriction.dateStart &&
-                    restriction.dateStart.toISOString().slice(0, 10)}
-                  {status === "active" && (
-                    <span className="rounded bg-foreground px-1.5 py-0.5 text-background">
-                      active
-                    </span>
-                  )}
-                  {status === "scheduled" && (
-                    <span className="rounded border border-zinc-400 px-1.5 py-0.5 text-zinc-500 dark:border-zinc-600 dark:text-zinc-400">
-                      scheduled
-                    </span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <>
+            {currentRestrictions.length > 0 && (
+              <ul className="flex flex-col divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+                {currentRestrictions.map(({ restriction, status }) => (
+                  <RestrictionRow
+                    key={restriction.id}
+                    name={restriction.name}
+                    dateStart={restriction.dateStart}
+                    status={status}
+                  />
+                ))}
+              </ul>
+            )}
+            {pastRestrictions.length > 0 && (
+              <details className="text-sm">
+                <summary className="cursor-pointer text-zinc-600 dark:text-zinc-400">
+                  {pastRestrictions.length} earlier list
+                  {pastRestrictions.length === 1 ? "" : "s"}
+                </summary>
+                <ul className="mt-1 flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+                  {pastRestrictions.map(({ restriction, status }) => (
+                    <RestrictionRow
+                      key={restriction.id}
+                      name={restriction.name}
+                      dateStart={restriction.dateStart}
+                      status={status}
+                    />
+                  ))}
+                </ul>
+              </details>
+            )}
+          </>
         ) : (
           <p className="text-sm text-zinc-500">
             No ban/points list has ever applied to this format.
@@ -126,34 +192,103 @@ export default async function FormatDetailPage({
           </p>
         )}
 
-        {numberedRotations.length > 0 && (
-          <ul className="mt-2 flex flex-col divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            {numberedRotations.map((pool) => {
-              const isActive = pool.id === format.activeCardPoolId;
-              return (
-                <li
-                  key={pool.id}
-                  className="flex items-center justify-between gap-2 py-2"
-                >
-                  <span className={isActive ? "font-semibold" : ""}>
-                    {pool.name}{" "}
-                    <span className="text-zinc-500">
-                      (rotation #{pool.rotationOrdinal})
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-2 text-xs text-zinc-500">
-                    {pool.rotationDateStart &&
-                      pool.rotationDateStart.toISOString().slice(0, 10)}
-                    {isActive && (
-                      <span className="rounded bg-foreground px-1.5 py-0.5 text-background">
-                        active
+        {showPoolDetails && (
+          <details className="text-sm">
+            <summary className="cursor-pointer text-zinc-600 dark:text-zinc-400">
+              Sets in this pool
+            </summary>
+            {groupedPool.length > 0 && (
+              <ul className="mt-2 flex flex-col gap-1">
+                {groupedPool.map((row) =>
+                  row.kind === "cycle" ? (
+                    <li key={row.id}>
+                      <div className="flex items-baseline justify-between gap-2 py-1">
+                        <Link
+                          href={packSearchHref(row.packs.map((p) => p.code))}
+                          className="font-medium underline"
+                        >
+                          {row.name}
+                        </Link>
+                        <span className="text-xs text-zinc-500">
+                          {row.size} · {formatReleaseDate(row.dateRelease)}
+                        </span>
+                      </div>
+                      <ul className="ml-4 flex flex-col">
+                        {row.packs.map((pack) => (
+                          <li
+                            key={pack.code}
+                            className="flex items-baseline justify-between gap-2 py-0.5"
+                          >
+                            <Link
+                              href={packSearchHref([pack.code])}
+                              className="underline"
+                            >
+                              {pack.name}
+                            </Link>
+                            <span className="text-xs text-zinc-500">
+                              {pack.size ?? ""} ·{" "}
+                              {formatReleaseDate(pack.dateRelease)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ) : (
+                    <li
+                      key={row.pack.code}
+                      className="flex items-baseline justify-between gap-2 py-1"
+                    >
+                      <Link
+                        href={packSearchHref([row.pack.code])}
+                        className="underline"
+                      >
+                        {row.pack.name}
+                      </Link>
+                      <span className="text-xs text-zinc-500">
+                        {row.pack.size ?? ""} ·{" "}
+                        {formatReleaseDate(row.pack.dateRelease)}
                       </span>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+                    </li>
+                  ),
+                )}
+              </ul>
+            )}
+
+            {numberedRotations.length > 0 && (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-zinc-600 dark:text-zinc-400">
+                  Rotation history
+                </summary>
+                <ul className="mt-1 flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+                  {numberedRotations.map((pool) => {
+                    const isActive = pool.id === format.activeCardPoolId;
+                    return (
+                      <li
+                        key={pool.id}
+                        className="flex items-center justify-between gap-2 py-2"
+                      >
+                        <span className={isActive ? "font-semibold" : ""}>
+                          {pool.name}{" "}
+                          <span className="text-zinc-500">
+                            (rotation #{pool.rotationOrdinal})
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-2 text-xs text-zinc-500">
+                          {pool.rotationDateStart &&
+                            pool.rotationDateStart.toISOString().slice(0, 10)}
+                          {isActive && (
+                            <span className="rounded bg-foreground px-1.5 py-0.5 text-background">
+                              active
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </details>
+            )}
+          </details>
         )}
       </section>
 
@@ -168,7 +303,9 @@ export default async function FormatDetailPage({
           {cardStatus.banned.length > 0 && (
             <div className="flex flex-col gap-1">
               <h3 className="text-sm font-semibold text-zinc-500">
-                Banned ({cardStatus.banned.length})
+                <Link href={bannedCardsHref} className="underline">
+                  Banned ({cardStatus.banned.length})
+                </Link>
               </h3>
               <p className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
                 {cardStatus.banned.map((card) => (
