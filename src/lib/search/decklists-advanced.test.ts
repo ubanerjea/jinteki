@@ -208,7 +208,7 @@ describe("searchDecklistsAdvanced (real DB)", () => {
   describe("identity filter", () => {
     it("matches a direct count and every row has that identity", async () => {
       const directCount = await prisma.decklist.count({
-        where: { identityCode: "nbn_the_world_is_yours" },
+        where: { identityCode: "nbn_the_world_is_yours", isPublic: true },
       });
       const result = await searchDecklistsAdvanced({
         identity: "nbn_the_world_is_yours",
@@ -245,7 +245,9 @@ describe("searchDecklistsAdvanced (real DB)", () => {
       expect(corp.total).toBe(36110);
       // Cross-check against a live direct count rather than a frozen literal,
       // since the dataset grows via ongoing syncs.
-      const directTotal = await prisma.decklist.count();
+      const directTotal = await prisma.decklist.count({
+        where: { isPublic: true },
+      });
       expect(runner.total + corp.total).toBe(directTotal);
     });
   });
@@ -308,9 +310,9 @@ describe("searchDecklistsAdvanced (real DB)", () => {
 
   describe("cardsExcluded: NOT semantics (excluding ALL supplied cards)", () => {
     it("excludes every deck containing the card, matching total-minus-containing", async () => {
-      const total = await prisma.decklist.count();
+      const total = await prisma.decklist.count({ where: { isPublic: true } });
       const containing = await prisma.decklistCard.count({
-        where: { cardCode: "hedge_fund" },
+        where: { cardCode: "hedge_fund", decklist: { isPublic: true } },
       });
       expect(containing).toBe(30477); // pinned, cross-checked live in psql
 
@@ -337,7 +339,7 @@ describe("searchDecklistsAdvanced (real DB)", () => {
   describe("authorId equality", () => {
     it("matches a direct count once nrdbUserId is populated (41, cross-checked in psql)", async () => {
       const directCount = await prisma.decklist.count({
-        where: { nrdbUserId: "Alsciende" },
+        where: { nrdbUserId: "Alsciende", isPublic: true },
       });
       expect(directCount).toBe(41);
       const result = await searchDecklistsAdvanced({
@@ -353,7 +355,7 @@ describe("searchDecklistsAdvanced (real DB)", () => {
     it(
       "format=standard returns a strict subset of the unfiltered total, cross-checked against an independently-shaped direct query",
       async () => {
-        const total = await prisma.decklist.count();
+        const total = await prisma.decklist.count({ where: { isPublic: true } });
 
         // Deliberately written differently from the implementation's
         // correlated NOT EXISTS (a NOT IN over a plain subquery instead) -
@@ -367,7 +369,7 @@ describe("searchDecklistsAdvanced (real DB)", () => {
         // implementation.
         const oracle = await prisma.$queryRaw<{ count: bigint }[]>`
         SELECT count(*)::bigint AS count FROM "Decklist" d
-        WHERE d.id NOT IN (
+        WHERE d."isPublic" = true AND d.id NOT IN (
           SELECT dc."decklistId" FROM "DecklistCard" dc
           JOIN "Card" cc ON cc.code = dc."cardCode"
           WHERE NOT ((cc.raw->'attributes'->'format_ids') @> to_jsonb('standard'::text))
@@ -423,7 +425,7 @@ describe("searchDecklistsAdvanced (real DB)", () => {
     it(
       "rotation=rotation_2025 returns a strict subset, cross-checked against an independently-shaped direct query",
       async () => {
-        const total = await prisma.decklist.count();
+        const total = await prisma.decklist.count({ where: { isPublic: true } });
 
         // Deliberately a different shape from the implementation's
         // correlated NOT EXISTS (a LATERAL LEFT JOIN anti-join instead) -
@@ -446,7 +448,7 @@ describe("searchDecklistsAdvanced (real DB)", () => {
               AND NOT ((cc.raw->'attributes'->'card_pool_ids') @> to_jsonb('rotation_2025'::text))
             LIMIT 1
           ) bad ON true
-          WHERE bad IS NULL
+          WHERE bad IS NULL AND d."isPublic" = true
         `;
         const expected = Number(oracle[0].count);
         expect(expected).toBe(6100); // pinned, cross-checked live in psql
@@ -486,7 +488,7 @@ describe("searchDecklistsAdvanced (real DB)", () => {
     });
 
     it("blank rotation filters nothing (full total)", async () => {
-      const total = await prisma.decklist.count();
+      const total = await prisma.decklist.count({ where: { isPublic: true } });
       const result = await searchDecklistsAdvanced({ pageSize: 1 });
       expect(result.total).toBe(total);
     });
@@ -566,7 +568,7 @@ describe("searchDecklistsAdvanced (real DB)", () => {
     });
 
     it("tournamentLegal without format is a no-op (full total, not zero/empty)", async () => {
-      const total = await prisma.decklist.count();
+      const total = await prisma.decklist.count({ where: { isPublic: true } });
       const result = await searchDecklistsAdvanced({
         tournamentLegal: "1",
         pageSize: 1,
@@ -687,7 +689,9 @@ describe("searchDecklistsAdvanced (real DB)", () => {
   });
 
   it("no criteria at all lists every decklist, matching a direct count", async () => {
-    const directCount = await prisma.decklist.count();
+    const directCount = await prisma.decklist.count({
+      where: { isPublic: true },
+    });
     const result = await searchDecklistsAdvanced({});
     expect(result.total).toBe(directCount);
     expect(result.items).toHaveLength(30);
@@ -703,8 +707,54 @@ describe("searchDecklistsAdvanced (real DB)", () => {
     it("`%` matches only names containing a literal percent sign, not every decklist", async () => {
       const result = await searchDecklistsAdvanced({ name: "%" });
       expect(result.total).toBe(93);
-      const total = await prisma.decklist.count();
+      const total = await prisma.decklist.count({ where: { isPublic: true } });
       expect(result.total).toBeLessThan(total);
     });
+  });
+
+  it("an unfiltered query hides a private owned row until it is published", async () => {
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email: "unmeel@gmail.com" },
+      select: { id: true },
+    });
+    const identity = await prisma.card.findFirstOrThrow({
+      where: { typeCode: { in: ["corp_identity", "runner_identity"] } },
+      select: { code: true },
+    });
+    const before = await searchDecklistsAdvanced({ pageSize: 1 });
+    const row = await prisma.decklist.create({
+      data: {
+        name: "phase12-adv-private",
+        identityCode: identity.code,
+        ownerId: user.id,
+        isPublic: false,
+        raw: {},
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    try {
+      const afterInsert = await searchDecklistsAdvanced({ pageSize: 1 });
+      expect(afterInsert.total).toBe(before.total);
+      const named = await searchDecklistsAdvanced({
+        name: "phase12-adv-private",
+        pageSize: 10,
+      });
+      expect(named.items.some((d) => d.id === row.id)).toBe(false);
+
+      await prisma.decklist.update({
+        where: { id: row.id },
+        data: { isPublic: true },
+      });
+      const published = await searchDecklistsAdvanced({
+        name: "phase12-adv-private",
+        pageSize: 10,
+      });
+      expect(published.items.some((d) => d.id === row.id)).toBe(true);
+      const unfiltered = await searchDecklistsAdvanced({ pageSize: 1 });
+      expect(unfiltered.total).toBe(before.total + 1);
+    } finally {
+      await prisma.decklist.delete({ where: { id: row.id } });
+    }
   });
 });

@@ -104,7 +104,7 @@ model Card {
 // ---------------------------------------------------------------------------
 
 model Decklist {
-  id           String    @id
+  id           String    @id @default(cuid())
   name         String
   identityCode String
   // Promoted out of `raw` in Phase 8 (PHASE_8_PLAN.md item 1) so /decklists'
@@ -120,9 +120,16 @@ model Decklist {
   updatedAt  DateTime?
   nrdbUserId String?
   raw        Json
+  // Null means NRDB-synced. User-created rows always set this.
+  ownerId    String?
+  // Default true so existing NRDB rows stay public without a backfill.
+  // User create/clone always pass false unless the publish checkbox is on.
+  isPublic   Boolean  @default(true)
+  notes      String?
 
   identity Card           @relation(fields: [identityCode], references: [code])
   cards    DecklistCard[]
+  owner    User?          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   favoritedBy DecklistFavorite[]
 
@@ -130,6 +137,7 @@ model Decklist {
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Decklist_name_trgm_idx")
   @@index([createdAt])
   @@index([updatedAt])
+  @@index([ownerId])
 }
 
 model DecklistCard {
@@ -227,6 +235,7 @@ model User {
 
   cardFavorites     CardFavorite[]
   decklistFavorites DecklistFavorite[]
+  ownedDecklists    Decklist[]
 }
 
 // Standard Auth.js Prisma-adapter shape, unmodified.

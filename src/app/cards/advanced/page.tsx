@@ -106,7 +106,7 @@ export default async function AdvancedCardSearchPage({
           this is simple search, embedded for convenience, not another way to
           drive the advanced query. Same engine as /cards (one box matching
           title or text, always fuzzy), so it is the one place on this page
-          where the f:/t:/s:/d: prefix syntax applies. The criteria form's
+          where the simple-search prefix syntax applies. The criteria form's
           Card Name / Card Text fields are pure literal text; they have real
           pickers for those four facets a few rows down.
 

@@ -34,7 +34,8 @@ A web app to capture, search, and view Android: Netrunner card data (FFG core se
 - Accounts unlock:
   - **Favorites/collections** on cards and decklists.
   - **Roles**: an admin role (you) that can trigger syncs and moderate; regular users can browse and favorite.
-- **Explicitly out of scope for now**: user-created decklists / a full deckbuilder feature — that's a separate, larger phase.
+  - **User-created decklists** (Phase 12, `plans/PHASE_12_PLAN.md`): a signed-in user can create, clone, edit, and optionally publish decklists on `/me`. Private by default.
+- **Explicitly out of scope**: a visual/live deckbuilder (search-as-you-type tray, drag-drop, legality as a save gate). Phase 12's edit page is a form, not that.
 
 ## Deployment
 
@@ -57,6 +58,7 @@ over time as work is planned, rather than the full set being decided up front.
 9. **Remote access** — Tailscale Funnel + an application-layer GitHub-login allowlist (`AllowedLogin`/`LoginAttempt`, `signIn` gate, `/admin/allowlist`), so the app can be reached from outside the LAN without opening it to arbitrary GitHub accounts. See `plans/design/REMOTE_ACCESS_DESIGN.md` and `plans/PHASE_9_PLAN.md`. **Complete**: code, local verification, and the operational steps (Funnel live at `https://andromeda.tailcb2bd0.ts.net` → port 3001, second GitHub OAuth App registered against it) are all done, and a real sign-in through the public Funnel URL from an off-LAN machine has been owner-verified (`agent-reports/phase-9.md`'s 2026-09-04 follow-up). Two items remain open by choice/circumstance, not as blockers: testing that a non-allowlisted account is rejected through the *real* Funnel URL was explicitly skipped by the owner (the deny path is already covered by real-DB tests), and Funnel surviving a host reboot hasn't had occasion to be tested yet.
 10. **Format restriction history, rotation & tournament-legal filters** — fixes `/formats/[id]`'s restriction-history display (distinguishing active/scheduled/past entries and hiding NRDB's legacy "(ignore active date)" rows), syncs NRDB's `card_pools` ("rotation") data, and adds decklist Rotation/Tournament-Legal filters computed from that data — all closing out the fixes originally tracked in the now-archived `plans/archive/FORMATS_SECTION_FIXES_PLAN.md`. See `plans/PHASE_10_PLAN.md`.
 11. **Format card links, sets, and decklist layout** — one-click currently-legal / currently-banned card search from `/formats/[id]`, collapsed restriction history and current-pool set tables, a `/sets` index (NRDB-style cycle grouping + Standard/Startup/Eternal checkmarks), Pack→Set rename and newest-first set filter (any printing), set name on card-search list view, and a sectioned decklist card list with influence pips and sort-by-set. See `plans/PHASE_11_PLAN.md`.
+12. **Simple search syntax, user decklists, and decklist card hover** — extend the simple-search box with short+long prefixes (`format:`, `banned:`, `set:`, `cycle:`, `title:`, `text:`), boolean logic, and a rewritten `/cards/syntax`; let signed-in users create/clone/edit private-by-default decklists on `/me`; hover-preview card images on `/decklists/[id]`. See `plans/PHASE_12_PLAN.md`. Sourced from the topical docs now in `plans/archive/` (`SIMPLE_SEARCH_SYNTAX_PLAN.md`, `USER_DECKLISTS_PLAN.md`, `DECKLIST_CARD_HOVER_PLAN.md`).
 
 ## Phase verification standards
 

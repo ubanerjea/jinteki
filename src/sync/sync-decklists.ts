@@ -2,6 +2,10 @@
 // existing (pnpm sync:cards must run first) for `Decklist.identityCode` and
 // `DecklistCard.cardCode` FKs.
 //
+// Any future wipe-all of this table MUST exclude `ownerId IS NOT NULL` so
+// user-created rows are not deleted alongside the NRDB snapshot. This sync
+// only upserts the UUID it fetched and does not wipe.
+//
 // Incremental vs. full resync: NRDB has ~74k decklists (verified live via
 // `meta.stats.total.count` on GET /decklists), by far the largest resource
 // synced in this phase, and its `filter[updated_at][gte]=<ISO date>` param

@@ -12,6 +12,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 
 import { parseCardSearchParams, searchCards } from "./cards";
+import { searchCardsAdvanced } from "./cards-advanced";
+import { getFormatCardStatus } from "./format-cards";
 
 afterAll(async () => {
   await prisma.$disconnect();
@@ -493,15 +495,14 @@ describe("searchCards (real DB)", () => {
     });
   });
 
-  // Phase 6 item 6: field:value operator syntax, real-DB integration case
-  // (unit tests for parseCardSearchParams's parsing logic itself are below,
-  // no DB needed for those).
+  // Prefix syntax in q is compiled from the AST, not folded into facet
+  // fields. Counts below are re-queried, not copied from a plan.
   describe("operator syntax in q (real DB)", () => {
-    it('q: "f:anarch s:virus" (no residual text) matches an equivalent direct query', async () => {
+    it('q: "f:anarch s:virus" matches an equivalent direct query', async () => {
       const params = parseCardSearchParams({ q: "f:anarch s:virus" });
-      expect(params.faction).toBe("anarch");
-      expect(params.keyword).toBe("virus");
-      expect(params.q).toBeUndefined();
+      expect(params.q).toBe("f:anarch s:virus");
+      expect(params.faction).toBeUndefined();
+      expect(params.keyword).toBeUndefined();
 
       const directCount = await prisma.card.count({
         where: { factionCode: "anarch", keywords: { has: "virus" } },
@@ -511,67 +512,241 @@ describe("searchCards (real DB)", () => {
       expect(result.total).toBeGreaterThan(0);
       expect(result.items.every((c) => c.factionCode === "anarch")).toBe(true);
     });
+
+    it("q=format:standard equals ?format=standard (current pool)", async () => {
+      const byUrl = await searchCards({ format: "standard", pageSize: 1 });
+      const byQ = await searchCards({ q: "format:standard", pageSize: 1 });
+      expect(byQ.total).toBe(byUrl.total);
+      expect(byQ.total).toBeGreaterThan(0);
+    });
+
+    it("q=format:standard banned:yes equals advanced banned=1 and getFormatCardStatus", async () => {
+      const standard = await prisma.format.findUniqueOrThrow({
+        where: { id: "standard" },
+        select: { activeRestrictionId: true },
+      });
+      const status = await getFormatCardStatus(standard.activeRestrictionId);
+      const byQ = await searchCards({
+        q: "format:standard banned:yes",
+        pageSize: 100,
+      });
+      const byAdv = await searchCardsAdvanced({
+        format: "standard",
+        banned: "1",
+        pageSize: 100,
+      });
+      expect(byQ.total).toBe(status.banned.length);
+      expect(byAdv.total).toBe(status.banned.length);
+      expect(byQ.items.map((c) => c.code).sort()).toEqual(
+        status.banned.map((c) => c.code).sort(),
+      );
+    });
+
+    it("q=format:standard banned:no equals pool minus banned", async () => {
+      const pool = await searchCards({ format: "standard", pageSize: 1 });
+      const banned = await searchCards({
+        q: "format:standard banned:yes",
+        pageSize: 1,
+      });
+      const notBanned = await searchCards({
+        q: "format:standard banned:no",
+        pageSize: 1,
+      });
+      expect(notBanned.total).toBe(pool.total - banned.total);
+    });
+
+    it("q=f:anarch t:program and q=f:anarch virus match direct counts", async () => {
+      const programDirect = await prisma.card.count({
+        where: { factionCode: "anarch", typeCode: "program" },
+      });
+      const program = await searchCards({
+        q: "f:anarch t:program",
+        pageSize: 1,
+      });
+      expect(program.total).toBe(programDirect);
+
+      const virusDirect = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`
+          SELECT count(*)::bigint AS count FROM "Card"
+          WHERE "factionCode" = 'anarch'
+            AND (
+              'virus' <% title OR title ILIKE '%virus%'
+              OR 'virus' <% text OR text ILIKE '%virus%'
+            )
+        `,
+      );
+      const virus = await searchCards({ q: "f:anarch virus", pageSize: 1 });
+      expect(virus.total).toBe(Number(virusDirect[0].count));
+    });
+
+    it("q=faction:anarch equals q=f:anarch", async () => {
+      const short = await searchCards({ q: "f:anarch", pageSize: 1 });
+      const long = await searchCards({ q: "faction:anarch", pageSize: 1 });
+      expect(long.total).toBe(short.total);
+      const direct = await prisma.card.count({ where: { factionCode: "anarch" } });
+      expect(short.total).toBe(direct);
+    });
+
+    it("q=!f:anarch equals total minus Anarch", async () => {
+      const total = await prisma.card.count();
+      const anarch = await prisma.card.count({ where: { factionCode: "anarch" } });
+      const result = await searchCards({ q: "!f:anarch", pageSize: 1 });
+      expect(result.total).toBe(total - anarch);
+    });
+
+    it("q=f:anarch | f:criminal equals the union of each alone", async () => {
+      const anarch = await prisma.card.count({ where: { factionCode: "anarch" } });
+      const criminal = await prisma.card.count({
+        where: { factionCode: "criminal" },
+      });
+      const both = await prisma.card.count({
+        where: { factionCode: { in: ["anarch", "criminal"] } },
+      });
+      const result = await searchCards({
+        q: "f:anarch | f:criminal",
+        pageSize: 1,
+      });
+      expect(result.total).toBe(both);
+      expect(result.total).toBe(anarch + criminal);
+    });
+
+    it("q=i:virus vs q=x:virus vs residual virus", async () => {
+      const titleDirect = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`
+          SELECT count(*)::bigint AS count FROM "Card"
+          WHERE ('virus' <% title OR title ILIKE '%virus%')
+        `,
+      );
+      const textDirect = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`
+          SELECT count(*)::bigint AS count FROM "Card"
+          WHERE ('virus' <% text OR text ILIKE '%virus%')
+        `,
+      );
+      const residualDirect = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`
+          SELECT count(*)::bigint AS count FROM "Card"
+          WHERE (
+            'virus' <% title OR title ILIKE '%virus%'
+            OR 'virus' <% text OR text ILIKE '%virus%'
+          )
+        `,
+      );
+      const title = await searchCards({ q: "i:virus", pageSize: 1 });
+      const textOnly = await searchCards({ q: "x:virus", pageSize: 1 });
+      const residual = await searchCards({ q: "virus", pageSize: 1 });
+      expect(title.total).toBe(Number(titleDirect[0].count));
+      expect(textOnly.total).toBe(Number(textDirect[0].count));
+      expect(residual.total).toBe(Number(residualDirect[0].count));
+      expect(residual.total).toBeGreaterThan(title.total);
+      expect(residual.total).toBeGreaterThanOrEqual(textOnly.total);
+    });
+
+    it("q=e:kala_ghoda and e:kala ghoda equal ?pack=kala_ghoda", async () => {
+      const byUrl = await searchCards({ pack: "kala_ghoda", pageSize: 1 });
+      const byCode = await searchCards({ q: "e:kala_ghoda", pageSize: 1 });
+      const byName = await searchCards({ q: "e:kala ghoda", pageSize: 1 });
+      expect(byCode.total).toBe(byUrl.total);
+      expect(byName.total).toBe(byUrl.total);
+      expect(byUrl.total).toBeGreaterThan(0);
+    });
+
+    it("q=cy:mumbad and cy:10 equal Mumbad pack containment", async () => {
+      const packs = await prisma.pack.findMany({
+        where: { cardCycleId: "mumbad" },
+        select: { code: true },
+      });
+      const codes = packs.map((p) => p.code);
+      const direct = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`
+          SELECT count(*)::bigint AS count FROM "Card" c
+          WHERE EXISTS (
+            SELECT 1 FROM "Pack" p
+            WHERE p."cardCycleId" = 'mumbad'
+              AND (c.raw->'attributes'->'card_set_ids') @> to_jsonb(p.code)
+          )
+        `,
+      );
+      const expected = Number(direct[0].count);
+      expect(codes.length).toBeGreaterThan(0);
+      const byId = await searchCards({ q: "cy:mumbad", pageSize: 1 });
+      const byPos = await searchCards({ q: "cy:10", pageSize: 1 });
+      expect(byId.total).toBe(expected);
+      expect(byPos.total).toBe(expected);
+    });
+
+    it("URL faction wins over f: in q", async () => {
+      const nbn = await prisma.card.count({ where: { factionCode: "nbn" } });
+      const result = await searchCards({
+        q: "f:anarch",
+        faction: "nbn",
+        pageSize: 1,
+      });
+      expect(result.total).toBe(nbn);
+    });
+
+    it("URL banned=1 with format=standard works on simple search", async () => {
+      const result = await searchCards({
+        format: "standard",
+        banned: "1",
+        pageSize: 1,
+      });
+      const banned = await searchCards({
+        q: "format:standard banned:yes",
+        pageSize: 1,
+      });
+      expect(result.total).toBe(banned.total);
+      expect(result.total).toBeGreaterThan(0);
+    });
   });
 });
 
-describe("parseCardSearchParams - operator syntax (item 6)", () => {
-  it("recognizes f: as a faction filter", () => {
+describe("parseCardSearchParams - operator syntax", () => {
+  it("keeps the raw q string rather than folding prefixes into facets", () => {
     const result = parseCardSearchParams({ q: "f:anarch" });
-    expect(result.faction).toBe("anarch");
-    expect(result.q).toBeUndefined();
+    expect(result.q).toBe("f:anarch");
+    expect(result.faction).toBeUndefined();
   });
 
-  it("recognizes t: as a type filter", () => {
-    const result = parseCardSearchParams({ q: "t:ice" });
-    expect(result.type).toBe("ice");
-    expect(result.q).toBeUndefined();
+  it("keeps t:/s:/d: in q too", () => {
+    expect(parseCardSearchParams({ q: "t:ice" }).type).toBeUndefined();
+    expect(parseCardSearchParams({ q: "s:virus" }).keyword).toBeUndefined();
+    expect(parseCardSearchParams({ q: "d:runner" }).side).toBeUndefined();
+    expect(parseCardSearchParams({ q: "t:ice" }).q).toBe("t:ice");
   });
 
-  it("recognizes s: as a keyword (subtype) filter", () => {
-    const result = parseCardSearchParams({ q: "s:virus" });
-    expect(result.keyword).toBe("virus");
-    expect(result.q).toBeUndefined();
-  });
-
-  it("recognizes d: as a side filter", () => {
-    const result = parseCardSearchParams({ q: "d:runner" });
-    expect(result.side).toBe("runner");
-    expect(result.q).toBeUndefined();
-  });
-
-  it("is case-insensitive on the prefix letter (F:anarch == f:anarch)", () => {
-    const result = parseCardSearchParams({ q: "F:anarch" });
-    expect(result.faction).toBe("anarch");
-  });
-
-  it("folds multiple operators and leaves residual text as q", () => {
+  it("does not fold mixed operators; q stays the full string", () => {
     const result = parseCardSearchParams({ q: "f:anarch s:virus rootkit" });
-    expect(result.faction).toBe("anarch");
-    expect(result.keyword).toBe("virus");
-    expect(result.q).toBe("rootkit");
+    expect(result.faction).toBeUndefined();
+    expect(result.keyword).toBeUndefined();
+    expect(result.q).toBe("f:anarch s:virus rootkit");
   });
 
-  it("leaves an unrecognized prefix as literal text, not stripped", () => {
+  it("keeps x:foo bar as the raw q (AST compilation treats x: as text)", () => {
     const result = parseCardSearchParams({ q: "x:foo bar" });
     expect(result.faction).toBeUndefined();
     expect(result.q).toBe("x:foo bar");
   });
 
-  it("an explicit dropdown param wins over a matching operator token in q", () => {
+  it("reads URL facets independently of q", () => {
     const result = parseCardSearchParams({ q: "f:anarch", faction: "nbn" });
     expect(result.faction).toBe("nbn");
-    // The f: token is still stripped out of q even though its value lost -
-    // it was recognized as an operator, not left as literal text.
-    expect(result.q).toBeUndefined();
+    expect(result.q).toBe("f:anarch");
   });
 
-  it("an explicit dropdown param for a different field doesn't block an operator for another field", () => {
+  it("reads URL banned as 1/0", () => {
+    expect(parseCardSearchParams({ banned: "1" }).banned).toBe("1");
+    expect(parseCardSearchParams({ banned: "0" }).banned).toBe("0");
+    expect(parseCardSearchParams({ banned: "yes" }).banned).toBeUndefined();
+  });
+
+  it("an explicit dropdown param for a different field is kept alongside q", () => {
     const result = parseCardSearchParams({
       q: "f:anarch s:virus",
       side: "runner",
     });
-    expect(result.faction).toBe("anarch");
-    expect(result.keyword).toBe("virus");
+    expect(result.q).toBe("f:anarch s:virus");
     expect(result.side).toBe("runner");
+    expect(result.faction).toBeUndefined();
   });
 });

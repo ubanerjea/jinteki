@@ -4,6 +4,7 @@ import {
   cardInfluenceUsed,
   deckAgendaPoints,
   deckInfluenceUsed,
+  formatInfluenceLabel,
   groupDecklistCards,
   influenceLimit,
   influencePips,
@@ -67,6 +68,16 @@ describe("influencePips", () => {
   it("repeats ● for used influence, empty at 0", () => {
     expect(influencePips(4)).toBe("●●●●");
     expect(influencePips(0)).toBe("");
+  });
+});
+
+describe("formatInfluenceLabel", () => {
+  it("includes pips, used, and limit when a limit is known", () => {
+    expect(formatInfluenceLabel(4, 15)).toBe("Influence: ●●●● 4/15");
+  });
+
+  it("omits the limit when it is null and has no extra space at 0", () => {
+    expect(formatInfluenceLabel(0, null)).toBe("Influence: 0");
   });
 });
 

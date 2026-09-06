@@ -21,6 +21,15 @@ import {
   parsePageSize,
   toPagedResult,
 } from "./pagination";
+import {
+  collectFormatValues,
+  collectTextTerms,
+  parseBannedValue,
+  parseQuery,
+  type PrefixOp,
+  type QueryAst,
+  type TextColumn,
+} from "./query-syntax";
 import { firstParam, type PagedResult, type SearchParamsInput } from "./types";
 
 export interface CardSearchParams {
@@ -31,58 +40,17 @@ export interface CardSearchParams {
   keyword?: string;
   pack?: string;
   format?: string;
+  // "1" | "0" | unset. Same Ignore/Yes/No shape as advanced. Only applied
+  // when `format` is also set (URL facet); prefix `banned:` is compiled
+  // from the AST in searchCards().
+  banned?: string;
   order?: string;
   page?: number | string;
   pageSize?: number | string;
 }
 
-// Item 6 (PHASE_6_PLAN.md): minimal `field:value` operator syntax inside the
-// `q` box, e.g. "f:anarch s:virus rootkit". Maps NRDB's own f/t/s/d operand
-// letters onto the CardSearchParams field each already has a dropdown for.
-// Case-insensitive prefix letter; only these four exact prefixes are
-// recognized - anything else (e.g. "x:foo") is left alone as literal query
-// text, same "don't invent behavior for the unrecognized case" caution
-// src/lib/card-text.tsx's tag parser uses.
-const OPERATOR_FIELD: Record<string, keyof Pick<CardSearchParams, "faction" | "type" | "keyword" | "side">> = {
-  f: "faction",
-  t: "type",
-  s: "keyword",
-  d: "side",
-};
-const OPERATOR_TOKEN = /^(f|t|s|d):(\S+)$/i;
-
-// Splits a raw `q` string into recognized operator tokens (folded into the
-// corresponding field) and residual free text. Explicit dropdown values
-// (already-set `faction`/`type`/`keyword`/`side`) always win over a
-// same-field operator token in `q` - the operator syntax only fills in
-// whatever the dropdown left blank (PHASE_6_PLAN.md's "Things to confirm"
-// precedence rule: dropdown is the primary, discoverable UI; the operator
-// syntax is a power-user shortcut layered on top, not a competing source of
-// truth).
-export function extractOperators(
-  q: string,
-  explicit: Pick<CardSearchParams, "faction" | "type" | "keyword" | "side">,
-): { residual: string; derived: Pick<CardSearchParams, "faction" | "type" | "keyword" | "side"> } {
-  const derived: Pick<CardSearchParams, "faction" | "type" | "keyword" | "side"> = {};
-  const residualTokens: string[] = [];
-
-  for (const token of q.split(/\s+/).filter(Boolean)) {
-    const match = token.match(OPERATOR_TOKEN);
-    if (!match) {
-      residualTokens.push(token);
-      continue;
-    }
-    const field = OPERATOR_FIELD[match[1].toLowerCase()];
-    const value = match[2];
-    if (!explicit[field] && !derived[field]) {
-      derived[field] = value;
-    }
-    // Recognized operator token is stripped from the residual text
-    // regardless of whether it ended up being used (dropdown-wins case) -
-    // it was still "consumed" as an operator, not left as free text.
-  }
-
-  return { residual: residualTokens.join(" "), derived };
+export function validBanned(value: string | undefined): "1" | "0" | undefined {
+  return value === "1" || value === "0" ? value : undefined;
 }
 
 // Explicit sort control (PHASE_5_PLAN.md, from the Scryfall UX research):
@@ -226,6 +194,26 @@ export async function buildFacetConditions(params: {
   return conditions;
 }
 
+// Shared by searchCards() and searchCardsAdvanced(). URL/advanced banned is
+// only applied when `format` is also set; banned=1 with a format that has
+// no activeRestrictionId matches nothing; banned=0 in that case is a no-op.
+export async function bannedCondition(
+  formatId: string | undefined,
+  banned: "1" | "0" | undefined,
+): Promise<Prisma.Sql | undefined> {
+  if (!banned || !formatId) return undefined;
+  const activeFormat = await prisma.format.findUnique({
+    where: { id: formatId },
+    select: { activeRestrictionId: true },
+  });
+  if (activeFormat?.activeRestrictionId) {
+    const contains = Prisma.sql`(raw->'attributes'->'restrictions'->'banned') @> to_jsonb(${activeFormat.activeRestrictionId}::text)`;
+    return banned === "1" ? contains : Prisma.sql`NOT (${contains})`;
+  }
+  if (banned === "1") return Prisma.sql`false`;
+  return undefined;
+}
+
 export interface CardSummary {
   code: string;
   title: string;
@@ -248,44 +236,38 @@ export function parseCardSearchParams(
 ): Required<Pick<CardSearchParams, "page" | "pageSize">> &
   Pick<
     CardSearchParams,
-    "q" | "faction" | "side" | "type" | "keyword" | "pack" | "format" | "order"
+    | "q"
+    | "faction"
+    | "side"
+    | "type"
+    | "keyword"
+    | "pack"
+    | "format"
+    | "banned"
+    | "order"
   > {
   const qRaw = firstParam(input, "q")?.trim();
-  const explicitFaction = firstParam(input, "faction")?.trim();
-  const explicitSide = firstParam(input, "side")?.trim();
-  const explicitType = firstParam(input, "type")?.trim();
-  const explicitKeyword = firstParam(input, "keyword")?.trim();
+  const faction = firstParam(input, "faction")?.trim();
+  const side = firstParam(input, "side")?.trim();
+  const type = firstParam(input, "type")?.trim();
+  const keyword = firstParam(input, "keyword")?.trim();
   const pack = firstParam(input, "pack")?.trim();
   const format = firstParam(input, "format")?.trim();
   const order = firstParam(input, "order")?.trim();
 
-  // Item 6: fold any recognized f:/t:/s:/d: operator tokens out of `q` into
-  // the matching field, before the usual blank -> undefined normalization -
-  // explicit dropdown params (parsed above) always take precedence, per the
-  // extractOperators() precedence rule.
-  const { residual, derived } = qRaw
-    ? extractOperators(qRaw, {
-        faction: explicitFaction,
-        type: explicitType,
-        keyword: explicitKeyword,
-        side: explicitSide,
-      })
-    : { residual: "", derived: {} };
-
-  const q = residual.trim();
-  const faction = explicitFaction || derived.faction;
-  const side = explicitSide || derived.side;
-  const type = explicitType || derived.type;
-  const keyword = explicitKeyword || derived.keyword;
-
+  // `q` is the trimmed raw box string. Prefixes inside it are compiled from
+  // the AST in searchCards(); they are not folded into these URL-facet
+  // fields (doing both would double-filter). URL facets still win at
+  // compile time over the same field in q.
   return {
-    q: q ? q : undefined,
+    q: qRaw ? qRaw : undefined,
     faction: faction ? faction : undefined,
     side: side ? side : undefined,
     type: type ? type : undefined,
     keyword: keyword ? keyword : undefined,
     pack: pack ? pack : undefined,
     format: format ? format : undefined,
+    banned: validBanned(firstParam(input, "banned")?.trim()),
     order: orderColumn(order) ? order : undefined,
     page: parsePage(firstParam(input, "page")),
     // Restricted to the set the "Per page" control offers, so the control
@@ -302,6 +284,194 @@ export function parseCardSearchParams(
   };
 }
 
+interface UrlFacets {
+  faction?: string;
+  type?: string;
+  keyword?: string;
+  side?: string;
+  pack?: string;
+  format?: string;
+  banned?: "1" | "0";
+}
+
+async function resolvePackCodes(value: string): Promise<string[]> {
+  const or: Prisma.PackWhereInput[] = [
+    { code: { equals: value, mode: "insensitive" } },
+    { name: { equals: value, mode: "insensitive" } },
+  ];
+  if (/^\d+$/.test(value)) {
+    or.push({ position: Number(value) });
+  }
+  const packs = await prisma.pack.findMany({
+    where: { OR: or },
+    select: { code: true },
+  });
+  return [...new Set(packs.map((p) => p.code))];
+}
+
+async function resolveCyclePackCodes(value: string): Promise<string[]> {
+  const or: Prisma.CycleWhereInput[] = [
+    { id: { equals: value, mode: "insensitive" } },
+    { name: { equals: value, mode: "insensitive" } },
+  ];
+  if (/^\d+$/.test(value)) {
+    or.push({ position: Number(value) });
+  }
+  const cycle = await prisma.cycle.findFirst({
+    where: { OR: or },
+    select: { id: true },
+  });
+  if (!cycle) return [];
+  const packs = await prisma.pack.findMany({
+    where: { cardCycleId: cycle.id },
+    select: { code: true },
+  });
+  return packs.map((p) => p.code);
+}
+
+async function resolveFormatId(value: string): Promise<string | undefined> {
+  const format = await prisma.format.findFirst({
+    where: {
+      OR: [
+        { id: { equals: value, mode: "insensitive" } },
+        { name: { equals: value, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true },
+  });
+  return format?.id;
+}
+
+function textConditionSql(column: TextColumn, phrase: string): Prisma.Sql {
+  if (!phrase) return Prisma.sql`false`;
+  const like = likePattern(phrase);
+  if (column === "title") {
+    return Prisma.sql`(${phrase} <% title OR title ILIKE ${like})`;
+  }
+  if (column === "text") {
+    return Prisma.sql`(${phrase} <% text OR text ILIKE ${like})`;
+  }
+  return Prisma.sql`(${phrase} <% title OR title ILIKE ${like} OR ${phrase} <% text OR text ILIKE ${like})`;
+}
+
+function relevanceSql(column: TextColumn, phrase: string): Prisma.Sql {
+  if (column === "title") {
+    return Prisma.sql`word_similarity(${phrase}, title)`;
+  }
+  if (column === "text") {
+    return Prisma.sql`word_similarity(${phrase}, coalesce(text, ''))`;
+  }
+  return Prisma.sql`GREATEST(word_similarity(${phrase}, title), word_similarity(${phrase}, coalesce(text, '')))`;
+}
+
+async function firstCondition(
+  params: Parameters<typeof buildFacetConditions>[0],
+): Promise<Prisma.Sql> {
+  const conditions = await buildFacetConditions(params);
+  return conditions[0] ?? Prisma.sql`false`;
+}
+
+async function compileNode(
+  ast: QueryAst,
+  url: UrlFacets,
+  bannedFormatId: string | undefined,
+): Promise<Prisma.Sql | null> {
+  switch (ast.type) {
+    case "match_all":
+      return null;
+    case "match_none":
+      return Prisma.sql`false`;
+    case "and": {
+      const left = await compileNode(ast.left, url, bannedFormatId);
+      const right = await compileNode(ast.right, url, bannedFormatId);
+      if (!left) return right;
+      if (!right) return left;
+      return Prisma.sql`(${left} AND ${right})`;
+    }
+    case "or": {
+      const left = await compileNode(ast.left, url, bannedFormatId);
+      const right = await compileNode(ast.right, url, bannedFormatId);
+      if (!left || !right) return null;
+      return Prisma.sql`(${left} OR ${right})`;
+    }
+    case "not": {
+      const child = await compileNode(ast.child, url, bannedFormatId);
+      if (!child) return Prisma.sql`false`;
+      return Prisma.sql`NOT (${child})`;
+    }
+    case "text":
+      return textConditionSql(ast.column, ast.value);
+    case "prefix":
+      return compilePrefix(ast.op, ast.value, url, bannedFormatId);
+  }
+}
+
+async function compilePrefix(
+  op: PrefixOp,
+  value: string,
+  url: UrlFacets,
+  bannedFormatId: string | undefined,
+): Promise<Prisma.Sql | null> {
+  switch (op) {
+    case "faction":
+      if (url.faction) return null;
+      return firstCondition({ faction: value });
+    case "type":
+      if (url.type) return null;
+      return firstCondition({ type: value });
+    case "keyword":
+      if (url.keyword) return null;
+      return firstCondition({ keyword: value });
+    case "side":
+      if (url.side) return null;
+      return firstCondition({ side: value });
+    case "set": {
+      if (url.pack) return null;
+      const codes = await resolvePackCodes(value);
+      if (codes.length === 0) return Prisma.sql`false`;
+      return firstCondition({ pack: codes.length === 1 ? codes[0] : codes });
+    }
+    case "cycle": {
+      const codes = await resolveCyclePackCodes(value);
+      if (codes.length === 0) return Prisma.sql`false`;
+      return firstCondition({ pack: codes.length === 1 ? codes[0] : codes });
+    }
+    case "format": {
+      if (url.format) return null;
+      const id = await resolveFormatId(value);
+      if (!id) return Prisma.sql`false`;
+      return firstCondition({ format: id });
+    }
+    case "banned": {
+      if (url.banned) return null;
+      const yes = parseBannedValue(value);
+      if (yes === null) return Prisma.sql`false`;
+      if (!bannedFormatId) {
+        return yes ? Prisma.sql`false` : null;
+      }
+      const sql = await bannedCondition(bannedFormatId, yes ? "1" : "0");
+      return sql ?? null;
+    }
+  }
+}
+
+async function compileAst(
+  ast: QueryAst,
+  url: UrlFacets,
+): Promise<{ sql: Prisma.Sql | null; textTerms: { column: TextColumn; value: string }[] }> {
+  if (ast.type === "match_none") {
+    return { sql: Prisma.sql`false`, textTerms: [] };
+  }
+  const formatValues = collectFormatValues(ast);
+  let bannedFormatId: string | undefined;
+  if (formatValues[0]) {
+    bannedFormatId = await resolveFormatId(formatValues[0]);
+  }
+  if (!bannedFormatId) bannedFormatId = url.format;
+  const sql = await compileNode(ast, url, bannedFormatId);
+  return { sql, textTerms: collectTextTerms(ast) };
+}
+
 export async function searchCards(
   params: CardSearchParams,
 ): Promise<PagedResult<CardSummary>> {
@@ -309,40 +479,36 @@ export async function searchCards(
   const pageSize = parsePageSize(params.pageSize);
   const q = params.q?.trim() || undefined;
 
-  // The six facet conditions live in buildFacetConditions() so /cards and
-  // /cards/advanced share one definition of what each filter means
-  // (PHASE_7_PLAN.md item 1). Behavior here is unchanged: every value
-  // searchCards() receives is a scalar, which the helper renders as the same
-  // `=` / `= ANY("keywords")` / `@>` conditions this function issued inline
-  // before.
+  // URL facets only - prefixes inside `q` are compiled from the AST below,
+  // not folded into these fields. AND of the two is the whole predicate.
   const conditions: Prisma.Sql[] = await buildFacetConditions(params);
+  const urlBanned = validBanned(params.banned);
+  const urlBannedSql = await bannedCondition(params.format, urlBanned);
+  if (urlBannedSql) conditions.push(urlBannedSql);
+
+  let textTerms: { column: TextColumn; value: string }[] = [];
   if (q) {
-    // `<%` is pg_trgm's word-similarity operator (true when
-    // word_similarity(q, column) exceeds pg_trgm.word_similarity_threshold,
-    // default 0.6) - the best-matching substring of the column against q,
-    // instead of `%`/similarity()'s whole-column comparison, so a short
-    // query isn't diluted by the rest of a long title/text. `ILIKE` is
-    // OR'd in as a plain-substring safety net for anything word_similarity
-    // still misses (e.g. very short queries) - measured as cheap even
-    // unindexed at this table's size. See plans/SEARCH_MATCHING.md.
-    // likePattern() escapes `%`/`_`/`\` so they match literally - a
-    // pre-existing hole shared with the advanced path, where `?q=%` returned
-    // every card. The word_similarity half is unaffected (a lone `%` has no
-    // trigrams, so it scores 0 and matches nothing there either).
-    const likeQ = likePattern(q);
-    conditions.push(
-      Prisma.sql`(${q} <% title OR title ILIKE ${likeQ} OR ${q} <% text OR text ILIKE ${likeQ})`,
-    );
+    const compiled = await compileAst(parseQuery(q), {
+      faction: params.faction,
+      type: params.type,
+      keyword: params.keyword,
+      side: params.side,
+      pack: params.pack,
+      format: params.format,
+      banned: urlBanned,
+    });
+    if (compiled.sql) conditions.push(compiled.sql);
+    textTerms = compiled.textTerms;
   }
 
   const whereSql = conditions.length
     ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`
     : Prisma.empty;
 
-  // With no free-text query, order alphabetically (there's no similarity
-  // score to rank by, and an unordered result set would paginate
-  // unstably - see agent-reports/phase-2.md's decklist pagination bug for
-  // why an explicit stable ORDER BY matters even for full lists).
+  // With no text terms, order alphabetically (there's no similarity score
+  // to rank by, and an unordered result set would paginate unstably - see
+  // agent-reports/phase-2.md's decklist pagination bug for why an explicit
+  // stable ORDER BY matters even for full lists).
   //
   // An explicit `order` takes priority over similarity ranking, since
   // choosing a sort column is a deliberate override of "most relevant
@@ -358,11 +524,14 @@ export async function searchCards(
   // (PHASE_7_PLAN.md item 2, "identical by construction") while
   // cards-advanced.ts honored order=title and this did not.
   const explicitOrderColumn = orderColumn(params.order);
+  const relevanceTerms = textTerms.map((t) => relevanceSql(t.column, t.value));
   const orderSql = explicitOrderColumn
     ? Prisma.sql`ORDER BY ${explicitOrderColumn} ASC, title ASC`
-    : q
-      ? Prisma.sql`ORDER BY GREATEST(word_similarity(${q}, title), word_similarity(${q}, coalesce(text, ''))) DESC, title ASC`
-      : Prisma.sql`ORDER BY title ASC`;
+    : relevanceTerms.length === 1
+      ? Prisma.sql`ORDER BY ${relevanceTerms[0]} DESC, title ASC`
+      : relevanceTerms.length > 1
+        ? Prisma.sql`ORDER BY GREATEST(${Prisma.join(relevanceTerms, ", ")}) DESC, title ASC`
+        : Prisma.sql`ORDER BY title ASC`;
 
   const [items, totalRows] = await Promise.all([
     prisma.$queryRaw<CardSummary[]>(Prisma.sql`

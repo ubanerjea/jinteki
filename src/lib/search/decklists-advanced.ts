@@ -12,6 +12,7 @@
 
 import { Prisma } from "@prisma/client";
 
+import { publicDecklistSql } from "@/lib/decklist-visibility";
 import { prisma } from "@/lib/prisma";
 
 import { likePattern } from "./cards";
@@ -166,7 +167,7 @@ export async function searchDecklistsAdvanced(
   const name = params.name?.trim() || undefined;
   const fuzzy = params.fuzzy === true;
 
-  const conditions: Prisma.Sql[] = [];
+  const conditions: Prisma.Sql[] = [publicDecklistSql()];
 
   if (name) {
     conditions.push(nameCondition(name, fuzzy));

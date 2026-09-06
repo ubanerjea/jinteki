@@ -25,11 +25,13 @@ export const dynamic = "force-dynamic";
 // them (prisma.faction.findMany, the keyword groupBy, prisma.pack.findMany,
 // prisma.format.findMany). They are not left running here.
 //
-// **parseCardSearchParams() is deliberately unchanged.** It still reads
-// every facet param, so bookmarked links, facet links elsewhere in the app,
-// and anything else pointing at /cards?faction=... keeps filtering exactly
-// as before. This page simply no longer offers a widget to change them -
-// hence the read-only "filtered by" note below.
+// parseCardSearchParams() still reads every URL facet param (including
+// banned), so bookmarked links, facet links elsewhere in the app, and
+// anything else pointing at /cards?faction=... keeps filtering exactly as
+// before. Prefixes inside `q` are compiled from the AST in searchCards()
+// rather than folded into those fields. This page simply no longer offers
+// a widget to change URL facets - hence the read-only "filtered by" note
+// below.
 //
 // Next.js App Router passes `searchParams` as a Promise. URL searchParams
 // remain the entire source of truth for list/filter state on this page - no
@@ -52,15 +54,10 @@ export default async function CardsPage({
 
   // Read-only "filtered by" note - for a facet set from an actual URL param
   // (a bookmarked or followed link), which this page has no widget to change.
-  // Built from `rawParams`, not the *parsed* `params`: a facet folded in from
-  // an `f:`/`t:`/`s:`/`d:` token in `q` is a different case entirely - the
-  // box below now shows the raw query verbatim (see `defaultValue`), so that
-  // filter is already visible and editable right there, not hidden. Earlier
-  // this read from `params.*` and so described token-derived facets too,
-  // which (a) mislabeled them as "set from the link you followed" when
-  // nothing was followed, and (b) had nothing backing it in `carriedParams`
-  // below (which has always read `rawParams`), so resubmitting the form
-  // silently dropped the filter the banner claimed was active.
+  // Built from `rawParams`, not the *parsed* `params`. Tokens inside `q`
+  // never appear in this banner - the box shows the raw query verbatim, so
+  // those filters are already visible and editable there. URL `banned=` is
+  // a real simple filter now, so it is listed with the other URL facets.
   const activeFacets = describeFacets(rawParams);
 
   // Presentation and inbound-filter state ride along in hidden inputs, so
@@ -99,15 +96,10 @@ export default async function CardsPage({
         <div className="flex flex-wrap items-center gap-2">
           <SimpleSearchBox
             name="q"
-            // Raw, not `params.q`: `params.q` is the *residual* left after
-            // folding any f:/t:/s:/d: token into a facet, so a search for
-            // "f:anarch virus" rendered the box back showing only "virus" -
-            // the token vanished from view, and with it any way to tell the
-            // filter was still active without reading the (now-fixed)
-            // "filtered by" note above. Showing what was actually typed
-            // keeps the token visible in the one place it's meant to live,
-            // and makes resubmitting idempotent: the same text re-parses to
-            // the same facet + residual every time, no hidden state needed.
+            // Raw URL `q`. parseCardSearchParams keeps that string as-is
+            // (prefixes are compiled from the AST, not stripped), so this
+            // is also `params.q` - reading rawParams keeps resubmits
+            // identical to what was typed even if parsing ever changes.
             defaultValue={firstParam(rawParams, "q") ?? ""}
             placeholder="e.g. Sure Gamble"
             ariaLabel="Search cards"

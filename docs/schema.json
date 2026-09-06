@@ -1,15 +1,24 @@
 {
-  "generatedAt": "2026-07-29T05:52:32.663Z",
+  "generatedAt": "2026-09-06T16:21:30.842Z",
   "source": {
-    "commit": "df3d7f720e04e1b25ee295c90e68a70e536e1d72",
+    "commit": "4194e3b45fd7a9226ae99c354dbaeb0ff75dc9a2",
     "dirty": true,
     "migrations": {
-      "count": 4,
+      "count": 13,
       "names": [
         "20260727222007_init",
         "20260728000126_add_sync_run_and_ruling_nrdb_id",
         "20260728141013_add_rules_sync_type",
-        "20260728143000_add_rule_mapping_fk"
+        "20260728143000_add_rule_mapping_fk",
+        "20260731065236_add_formats_restrictions",
+        "20260731070336_restore_trgm_indexes",
+        "20260803064956_declare_trgm_indexes",
+        "20260803071858_add_format_description",
+        "20260808194730_add_decklist_date_and_author_columns",
+        "20260809064826_add_allowed_login_and_login_attempt",
+        "20260904203544_add_card_pools",
+        "20260905002012_add_cycles_and_pack_columns",
+        "20260906161416_add_decklist_owner"
       ]
     }
   },
@@ -29,7 +38,9 @@
         "CARDS",
         "DECKLISTS",
         "RULINGS",
-        "RULES"
+        "RULES",
+        "RESTRICTIONS",
+        "CARD_POOLS"
       ],
       "description": "Sync run log — Phase 2. Populated by src/sync/*.ts. Gives the admin sync page (\"did the last sync work, when, how many records\") something to show."
     },
@@ -93,6 +104,96 @@
       ]
     },
     {
+      "name": "Cycle",
+      "description": "",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "name",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "dateRelease",
+          "rawType": "DateTime?",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "position",
+          "rawType": "Int?",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "raw",
+          "rawType": "Json",
+          "baseType": "Json",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "json",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Cycle\" (\n    \"id\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n    \"dateRelease\" TIMESTAMP(3),\n    \"position\" INTEGER,\n    \"raw\" JSONB NOT NULL,\n\n    CONSTRAINT \"Cycle_pkey\" PRIMARY KEY (\"id\")\n);"
+      ]
+    },
+    {
       "name": "Pack",
       "description": "",
       "fields": [
@@ -128,6 +229,101 @@
           "isFk": false,
           "isUnique": false,
           "fk": null
+        },
+        {
+          "name": "dateRelease",
+          "rawType": "DateTime?",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "size",
+          "rawType": "Int?",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "cardCycleId",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Pack",
+            "fromField": "cycle",
+            "toModel": "Cycle",
+            "fkColumns": [
+              "cardCycleId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "optional": true
+          }
+        },
+        {
+          "name": "cardSetTypeId",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "position",
+          "rawType": "Int?",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "raw",
+          "rawType": "Json?",
+          "baseType": "Json",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "json",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
         }
       ],
       "blockAttrs": [],
@@ -137,7 +333,9 @@
       "uniqueGroups": [],
       "indexGroups": [],
       "sql": [
-        "-- CreateTable\nCREATE TABLE \"Pack\" (\n    \"code\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n\n    CONSTRAINT \"Pack_pkey\" PRIMARY KEY (\"code\")\n);"
+        "-- CreateTable\nCREATE TABLE \"Pack\" (\n    \"code\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n\n    CONSTRAINT \"Pack_pkey\" PRIMARY KEY (\"code\")\n);",
+        "-- AlterTable\nALTER TABLE \"Pack\" ADD COLUMN     \"cardCycleId\" TEXT,\nADD COLUMN     \"cardSetTypeId\" TEXT,\nADD COLUMN     \"dateRelease\" TIMESTAMP(3),\nADD COLUMN     \"position\" INTEGER,\nADD COLUMN     \"raw\" JSONB,\nADD COLUMN     \"size\" INTEGER;",
+        "-- AddForeignKey\nALTER TABLE \"Pack\" ADD CONSTRAINT \"Pack_cardCycleId_fkey\" FOREIGN KEY (\"cardCycleId\") REFERENCES \"Cycle\"(\"id\") ON DELETE SET NULL ON UPDATE CASCADE;"
       ]
     },
     {
@@ -298,17 +496,29 @@
           "fk": null
         }
       ],
-      "blockAttrs": [],
+      "blockAttrs": [
+        "@@index([title(ops: raw(\"gin_trgm_ops\"))], type: Gin, map: \"Card_title_trgm_idx\")",
+        "@@index([text(ops: raw(\"gin_trgm_ops\"))], type: Gin, map: \"Card_text_trgm_idx\")"
+      ],
       "pkFields": [
         "code"
       ],
       "uniqueGroups": [],
-      "indexGroups": [],
+      "indexGroups": [
+        [
+          "title(ops: raw(\"gin_trgm_ops\"))"
+        ],
+        [
+          "text(ops: raw(\"gin_trgm_ops\"))"
+        ]
+      ],
       "sql": [
         "-- CreateTable\nCREATE TABLE \"Card\" (\n    \"code\" TEXT NOT NULL,\n    \"title\" TEXT NOT NULL,\n    \"typeCode\" TEXT NOT NULL,\n    \"factionCode\" TEXT NOT NULL,\n    \"sideCode\" TEXT NOT NULL,\n    \"text\" TEXT,\n    \"keywords\" TEXT[],\n    \"packCode\" TEXT,\n    \"raw\" JSONB NOT NULL,\n\n    CONSTRAINT \"Card_pkey\" PRIMARY KEY (\"code\")\n);",
         "-- AddForeignKey\nALTER TABLE \"Card\" ADD CONSTRAINT \"Card_factionCode_fkey\" FOREIGN KEY (\"factionCode\") REFERENCES \"Faction\"(\"code\") ON DELETE RESTRICT ON UPDATE CASCADE;",
         "-- AddForeignKey\nALTER TABLE \"Card\" ADD CONSTRAINT \"Card_packCode_fkey\" FOREIGN KEY (\"packCode\") REFERENCES \"Pack\"(\"code\") ON DELETE SET NULL ON UPDATE CASCADE;",
         "CREATE INDEX \"Card_title_trgm_idx\" ON \"Card\" USING GIN (\"title\" gin_trgm_ops);",
+        "CREATE INDEX \"Card_text_trgm_idx\" ON \"Card\" USING GIN (\"text\" gin_trgm_ops);",
+        "-- Restores the five pg_trgm GIN indexes that the previous migration\n-- (20260731065236_add_formats_restrictions) accidentally dropped.\n--\n-- Root cause: these indexes were created by hand in the Phase 1 init\n-- migration (CREATE INDEX ... USING GIN (col gin_trgm_ops)) because\n-- Prisma's schema DSL has no way to express gin_trgm_ops. `prisma migrate\n-- dev`'s auto-generated diff doesn't understand them, sees them as \"extra\"\n-- relative to schema.prisma, and proposes dropping them on every migration\n-- it generates. Three prior migrations\n-- (20260728000126_add_sync_run_and_ruling_nrdb_id,\n-- 20260728141013_add_rules_sync_type, 20260728143000_add_rule_mapping_fk)\n-- each have a comment documenting that their auto-generated SQL had to be\n-- hand-edited to strip out exactly these DROP INDEX statements before\n-- applying. This migration's generation skipped that edit, so the DROP\n-- INDEX statements went through and were applied to the live database.\n--\n-- Confirmed via `psql \\di` that all five were actually gone (not just\n-- present-in-file-but-unapplied) before writing this fix, and confirmed via\n-- `\\d` on the previous migration's file that it really did contain the drops\n-- (this was not a pre-existing/environmental issue - it was introduced by\n-- that migration).\n--\n-- See the warning comment now added directly in schema.prisma - every\n-- future migration must be checked for these same spurious drops before\n-- applying, since this will keep recurring as long as these indexes are\n-- expressed as hand-written SQL rather than Prisma-native schema.\n\nCREATE INDEX \"Card_title_trgm_idx\" ON \"Card\" USING GIN (\"title\" gin_trgm_ops);",
         "CREATE INDEX \"Card_text_trgm_idx\" ON \"Card\" USING GIN (\"text\" gin_trgm_ops);"
       ]
     },
@@ -326,6 +536,10 @@
             {
               "name": "id",
               "args": ""
+            },
+            {
+              "name": "default",
+              "args": "cuid()"
             }
           ],
           "isRelation": false,
@@ -375,6 +589,48 @@
           }
         },
         {
+          "name": "createdAt",
+          "rawType": "DateTime?",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "updatedAt",
+          "rawType": "DateTime?",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "nrdbUserId",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
           "name": "raw",
           "rawType": "Json",
           "baseType": "Json",
@@ -387,18 +643,102 @@
           "isFk": false,
           "isUnique": false,
           "fk": null
+        },
+        {
+          "name": "ownerId",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Decklist",
+            "fromField": "owner",
+            "toModel": "User",
+            "fkColumns": [
+              "ownerId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "onDelete": "Cascade",
+            "optional": true
+          }
+        },
+        {
+          "name": "isPublic",
+          "rawType": "Boolean",
+          "baseType": "Boolean",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "true"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "boolean",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "notes",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
         }
       ],
-      "blockAttrs": [],
+      "blockAttrs": [
+        "@@index([name(ops: raw(\"gin_trgm_ops\"))], type: Gin, map: \"Decklist_name_trgm_idx\")",
+        "@@index([createdAt])",
+        "@@index([updatedAt])",
+        "@@index([ownerId])"
+      ],
       "pkFields": [
         "id"
       ],
       "uniqueGroups": [],
-      "indexGroups": [],
+      "indexGroups": [
+        [
+          "name(ops: raw(\"gin_trgm_ops\"))"
+        ],
+        [
+          "createdAt"
+        ],
+        [
+          "updatedAt"
+        ],
+        [
+          "ownerId"
+        ]
+      ],
       "sql": [
         "-- CreateTable\nCREATE TABLE \"Decklist\" (\n    \"id\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n    \"identityCode\" TEXT NOT NULL,\n    \"raw\" JSONB NOT NULL,\n\n    CONSTRAINT \"Decklist_pkey\" PRIMARY KEY (\"id\")\n);",
         "-- AddForeignKey\nALTER TABLE \"Decklist\" ADD CONSTRAINT \"Decklist_identityCode_fkey\" FOREIGN KEY (\"identityCode\") REFERENCES \"Card\"(\"code\") ON DELETE RESTRICT ON UPDATE CASCADE;",
-        "CREATE INDEX \"Decklist_name_trgm_idx\" ON \"Decklist\" USING GIN (\"name\" gin_trgm_ops);"
+        "CREATE INDEX \"Decklist_name_trgm_idx\" ON \"Decklist\" USING GIN (\"name\" gin_trgm_ops);",
+        "CREATE INDEX \"Decklist_name_trgm_idx\" ON \"Decklist\" USING GIN (\"name\" gin_trgm_ops);",
+        "-- AlterTable\nALTER TABLE \"Decklist\" ADD COLUMN     \"createdAt\" TIMESTAMP(3),\nADD COLUMN     \"nrdbUserId\" TEXT,\nADD COLUMN     \"updatedAt\" TIMESTAMP(3);",
+        "-- CreateIndex\nCREATE INDEX \"Decklist_createdAt_idx\" ON \"Decklist\"(\"createdAt\");",
+        "-- CreateIndex\nCREATE INDEX \"Decklist_updatedAt_idx\" ON \"Decklist\"(\"updatedAt\");",
+        "-- AlterTable\nALTER TABLE \"Decklist\" ADD COLUMN     \"isPublic\" BOOLEAN NOT NULL DEFAULT true,\nADD COLUMN     \"notes\" TEXT,\nADD COLUMN     \"ownerId\" TEXT;",
+        "-- CreateIndex\nCREATE INDEX \"Decklist_ownerId_idx\" ON \"Decklist\"(\"ownerId\");",
+        "-- AddForeignKey\nALTER TABLE \"Decklist\" ADD CONSTRAINT \"Decklist_ownerId_fkey\" FOREIGN KEY (\"ownerId\") REFERENCES \"User\"(\"id\") ON DELETE CASCADE ON UPDATE CASCADE;"
       ]
     },
     {
@@ -721,14 +1061,26 @@
           "fk": null
         }
       ],
-      "blockAttrs": [],
+      "blockAttrs": [
+        "@@index([title(ops: raw(\"gin_trgm_ops\"))], type: Gin, map: \"RuleSection_title_trgm_idx\")",
+        "@@index([bodyText(ops: raw(\"gin_trgm_ops\"))], type: Gin, map: \"RuleSection_bodyText_trgm_idx\")"
+      ],
       "pkFields": [
         "id"
       ],
       "uniqueGroups": [],
-      "indexGroups": [],
+      "indexGroups": [
+        [
+          "title(ops: raw(\"gin_trgm_ops\"))"
+        ],
+        [
+          "bodyText(ops: raw(\"gin_trgm_ops\"))"
+        ]
+      ],
       "sql": [
         "-- CreateTable\nCREATE TABLE \"RuleSection\" (\n    \"id\" TEXT NOT NULL,\n    \"title\" TEXT NOT NULL,\n    \"anchor\" TEXT NOT NULL,\n    \"bodyText\" TEXT NOT NULL,\n\n    CONSTRAINT \"RuleSection_pkey\" PRIMARY KEY (\"id\")\n);",
+        "CREATE INDEX \"RuleSection_title_trgm_idx\" ON \"RuleSection\" USING GIN (\"title\" gin_trgm_ops);",
+        "CREATE INDEX \"RuleSection_bodyText_trgm_idx\" ON \"RuleSection\" USING GIN (\"bodyText\" gin_trgm_ops);",
         "CREATE INDEX \"RuleSection_title_trgm_idx\" ON \"RuleSection\" USING GIN (\"title\" gin_trgm_ops);",
         "CREATE INDEX \"RuleSection_bodyText_trgm_idx\" ON \"RuleSection\" USING GIN (\"bodyText\" gin_trgm_ops);"
       ]
@@ -1525,6 +1877,546 @@
       ]
     },
     {
+      "name": "Format",
+      "description": "Formats & restrictions (Most Wanted List / format-legality data) — Phase 6. Populated by src/sync/sync-restrictions.ts. Real API shape (verified live against api.netrunnerdb.com/api/v3/public, not the plan's original guessed draft - see agent-reports/phase-6.md): a `Format` (Standard/Startup/Eternal/...) points at whichever `Restriction` (a single named MWL/ban-list snapshot, e.g. \"Standard Ban List 26.03\") is currently active for it via `activeRestrictionId`. A Restriction's actual banned/restricted/points verdicts are keyed by card code inside `raw` (`attributes.verdicts`) - not flattened into a separate per-card join table, since NRDB's own `cards` resource *also* already carries a per-card `restrictions` history blob (keyed by restriction id) in `Card.raw`, so a second normalized copy of the same banned/restricted/points membership isn't needed to answer \"is this card currently banned/restricted in this format\" - only the format -> active-restriction-id link was missing, which is what this table actually adds. `activeRestrictionId` is deliberately a plain string, not a Prisma `@relation` - avoids a Format<->Restriction insert-ordering dependency (Format rows are upserted before the Restriction rows they point at exist yet on a first-ever sync), same reasoning Phase 1 used for `RuleMapping.ruleSectionId` before RuleSection had real rows.",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "name",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "activeRestrictionId",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "activeCardPoolId",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "description",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "raw",
+          "rawType": "Json",
+          "baseType": "Json",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "json",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Format\" (\n    \"id\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n    \"activeRestrictionId\" TEXT,\n    \"raw\" JSONB NOT NULL,\n\n    CONSTRAINT \"Format_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- AlterTable\nALTER TABLE \"Format\" ADD COLUMN     \"description\" TEXT;",
+        "-- AlterTable\nALTER TABLE \"Format\" ADD COLUMN     \"activeCardPoolId\" TEXT;"
+      ]
+    },
+    {
+      "name": "Restriction",
+      "description": "",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "name",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "formatId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "Restriction",
+            "fromField": "format",
+            "toModel": "Format",
+            "fkColumns": [
+              "formatId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "optional": false
+          }
+        },
+        {
+          "name": "dateStart",
+          "rawType": "DateTime?",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "raw",
+          "rawType": "Json",
+          "baseType": "Json",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "json",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"Restriction\" (\n    \"id\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n    \"formatId\" TEXT NOT NULL,\n    \"dateStart\" TIMESTAMP(3),\n    \"raw\" JSONB NOT NULL,\n\n    CONSTRAINT \"Restriction_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- AddForeignKey\nALTER TABLE \"Restriction\" ADD CONSTRAINT \"Restriction_formatId_fkey\" FOREIGN KEY (\"formatId\") REFERENCES \"Format\"(\"id\") ON DELETE RESTRICT ON UPDATE CASCADE;"
+      ]
+    },
+    {
+      "name": "CardPool",
+      "description": "Card pools (\"rotation\" data) — Phase 10 §2. Populated by src/sync/sync-card-pools.ts from NRDB's `card_pools` resource - a DIFFERENT resource from `card_sets` (Pack) and from `card_cycles` (Cycle). A `CardPool` is one named, dated-or-undated snapshot of \"every card cycle legal in format X as of this pool\" (e.g. Standard's \"Seventh Rotation\", \"Pre Rotation\", or the currently-active \"Standard 2026 - Vantage Point\"). Confirmed live 2026-09-04 (api.netrunnerdb.com/api/v3/public/card_pools): unlike Restriction, a card_pools resource carries NO date_start and NO per-snapshot \"active\" flag of its own - just { name, format_id, card_cycle_ids, updated_at, num_cards }. So Restriction's active/ scheduled/past classification (Phase 10 §1) does NOT transfer to CardPool - there's nothing to classify against. This was confirmed at build time per the plan's explicit instruction to check, not assumed. `rotationOrdinal`/`rotationDateStart` are populated only for the subset of card pools that are genuinely one of NSG's numbered \"Nth Rotation\" events (Standard-only) - sourced from netrunner-cards-json's root-level `rotations.json` file (a repo file, not an API resource, fetched separately by the sync step), matched by transforming that file's `code` (\"rotation-2017\") into the matching card_pools id (\"rotation_2017\"). Deliberately NOT derived by string-matching `card_pools.attributes.name` against `.*Rotation$` - `rotation_2020` (\"Salvaged Memories\") is a real, non-rotation-numbered pool that would break a naive sequential match (confirmed live - see rotationOrdinal's non-sequential test case in sync-card-pools.test.ts). Both columns are null for every pool that isn't one of the seven numbered rotations (pre_rotation, the currently-active pool, salvaged_memories, and every non-Standard format's pools all have null here) - that's expected, not a sync gap.",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "name",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "formatId",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": true,
+          "isUnique": false,
+          "fk": {
+            "fromModel": "CardPool",
+            "fromField": "format",
+            "toModel": "Format",
+            "fkColumns": [
+              "formatId"
+            ],
+            "refColumns": [
+              "id"
+            ],
+            "optional": false
+          }
+        },
+        {
+          "name": "cardCycleIds",
+          "rawType": "String[]",
+          "baseType": "String",
+          "isList": true,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string_array",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "rotationOrdinal",
+          "rawType": "Int?",
+          "baseType": "Int",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "int",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "rotationDateStart",
+          "rawType": "DateTime?",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "raw",
+          "rawType": "Json",
+          "baseType": "Json",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "json",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"CardPool\" (\n    \"id\" TEXT NOT NULL,\n    \"name\" TEXT NOT NULL,\n    \"formatId\" TEXT NOT NULL,\n    \"cardCycleIds\" TEXT[],\n    \"rotationOrdinal\" INTEGER,\n    \"rotationDateStart\" TIMESTAMP(3),\n    \"raw\" JSONB NOT NULL,\n\n    CONSTRAINT \"CardPool_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- AddForeignKey\nALTER TABLE \"CardPool\" ADD CONSTRAINT \"CardPool_formatId_fkey\" FOREIGN KEY (\"formatId\") REFERENCES \"Format\"(\"id\") ON DELETE RESTRICT ON UPDATE CASCADE;"
+      ]
+    },
+    {
+      "name": "AllowedLogin",
+      "description": "Remote access allowlist + sign-in audit log — Phase 9 (PHASE_9_PLAN.md §1, plans/design/REMOTE_ACCESS_DESIGN.md Decision 5). AllowedLogin is keyed by GitHub `login` (username), not User.id/email - it must be populatable *before* the person it refers to has ever signed in, so it can't reference anything that only exists after their first login. `active` (not row presence/absence) is the actual gate, so deactivating someone keeps their addedAt/note history instead of losing it. LoginAttempt is deliberately NOT a Prisma relation to AllowedLogin - a relation would force every attempt to reference an existing AllowedLogin row, but the whole point of logging attempts is to also capture logins from GitHub accounts that were never allowlisted at all (a stranger trying the URL). `githubLogin` is the key column throughout (not `userId`) since a rejected attempt never gets a User row to point at.",
+      "fields": [
+        {
+          "name": "githubLogin",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "active",
+          "rawType": "Boolean",
+          "baseType": "Boolean",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "true"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "boolean",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "addedAt",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "now()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "updatedAt",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "updatedAt",
+              "args": ""
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "note",
+          "rawType": "String?",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": true,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [],
+      "pkFields": [
+        "githubLogin"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"AllowedLogin\" (\n    \"githubLogin\" TEXT NOT NULL,\n    \"active\" BOOLEAN NOT NULL DEFAULT true,\n    \"addedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    \"updatedAt\" TIMESTAMP(3) NOT NULL,\n    \"note\" TEXT,\n\n    CONSTRAINT \"AllowedLogin_pkey\" PRIMARY KEY (\"githubLogin\")\n);"
+      ]
+    },
+    {
+      "name": "LoginAttempt",
+      "description": "",
+      "fields": [
+        {
+          "name": "id",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "id",
+              "args": ""
+            },
+            {
+              "name": "default",
+              "args": "cuid()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": true,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "githubLogin",
+          "rawType": "String",
+          "baseType": "String",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "string",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "allowed",
+          "rawType": "Boolean",
+          "baseType": "Boolean",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [],
+          "isRelation": false,
+          "mermaidType": "boolean",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        },
+        {
+          "name": "attemptedAt",
+          "rawType": "DateTime",
+          "baseType": "DateTime",
+          "isList": false,
+          "isOptional": false,
+          "attrs": [
+            {
+              "name": "default",
+              "args": "now()"
+            }
+          ],
+          "isRelation": false,
+          "mermaidType": "datetime",
+          "isPk": false,
+          "isFk": false,
+          "isUnique": false,
+          "fk": null
+        }
+      ],
+      "blockAttrs": [
+        "@@index([githubLogin])",
+        "@@index([attemptedAt])"
+      ],
+      "pkFields": [
+        "id"
+      ],
+      "uniqueGroups": [],
+      "indexGroups": [
+        [
+          "githubLogin"
+        ],
+        [
+          "attemptedAt"
+        ]
+      ],
+      "sql": [
+        "-- CreateTable\nCREATE TABLE \"LoginAttempt\" (\n    \"id\" TEXT NOT NULL,\n    \"githubLogin\" TEXT NOT NULL,\n    \"allowed\" BOOLEAN NOT NULL,\n    \"attemptedAt\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,\n\n    CONSTRAINT \"LoginAttempt_pkey\" PRIMARY KEY (\"id\")\n);",
+        "-- CreateIndex\nCREATE INDEX \"LoginAttempt_githubLogin_idx\" ON \"LoginAttempt\"(\"githubLogin\");",
+        "-- CreateIndex\nCREATE INDEX \"LoginAttempt_attemptedAt_idx\" ON \"LoginAttempt\"(\"attemptedAt\");"
+      ]
+    },
+    {
       "name": "SyncRun",
       "description": "",
       "fields": [
@@ -1663,6 +2555,18 @@
   ],
   "relations": [
     {
+      "fromModel": "Pack",
+      "fromField": "cycle",
+      "toModel": "Cycle",
+      "fkColumns": [
+        "cardCycleId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "optional": true
+    },
+    {
       "fromModel": "Card",
       "fromField": "faction",
       "toModel": "Faction",
@@ -1697,6 +2601,19 @@
         "code"
       ],
       "optional": false
+    },
+    {
+      "fromModel": "Decklist",
+      "fromField": "owner",
+      "toModel": "User",
+      "fkColumns": [
+        "ownerId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "onDelete": "Cascade",
+      "optional": true
     },
     {
       "fromModel": "DecklistCard",
@@ -1823,6 +2740,30 @@
         "id"
       ],
       "onDelete": "Cascade",
+      "optional": false
+    },
+    {
+      "fromModel": "Restriction",
+      "fromField": "format",
+      "toModel": "Format",
+      "fkColumns": [
+        "formatId"
+      ],
+      "refColumns": [
+        "id"
+      ],
+      "optional": false
+    },
+    {
+      "fromModel": "CardPool",
+      "fromField": "format",
+      "toModel": "Format",
+      "fkColumns": [
+        "formatId"
+      ],
+      "refColumns": [
+        "id"
+      ],
       "optional": false
     }
   ]

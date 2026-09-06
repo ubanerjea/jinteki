@@ -41,7 +41,9 @@ describe("parseDecklistTab", () => {
 describe("searchDecklistsByTab (real DB)", () => {
   describe("recent", () => {
     it("lists results and matches the real total row count", async () => {
-      const directCount = await prisma.decklist.count();
+      const directCount = await prisma.decklist.count({
+        where: { isPublic: true },
+      });
       const result = await searchDecklistsByTab({ tab: "recent" });
       expect(result.items.length).toBeGreaterThan(0);
       expect(result.total).toBe(directCount);
@@ -62,6 +64,7 @@ describe("searchDecklistsByTab (real DB)", () => {
 
     it("matches a direct psql-equivalent ORDER BY against the real top row", async () => {
       const direct = await prisma.decklist.findFirst({
+        where: { isPublic: true },
         orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         select: { id: true },
       });
@@ -82,6 +85,7 @@ describe("searchDecklistsByTab (real DB)", () => {
       }
 
       const direct = await prisma.decklist.findFirst({
+        where: { isPublic: true },
         orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
         select: { id: true },
       });
@@ -92,7 +96,10 @@ describe("searchDecklistsByTab (real DB)", () => {
   describe("week", () => {
     it("only includes decklists created in the last 7 days, matching a direct count", async () => {
       const directCount = await prisma.decklist.count({
-        where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
+        where: {
+          isPublic: true,
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
       });
       const result = await searchDecklistsByTab({ tab: "week", pageSize: 1 });
       expect(result.total).toBe(directCount);
@@ -166,6 +173,56 @@ describe("searchDecklistsByTab (real DB)", () => {
         await prisma.user.delete({ where: { id: secondUser.id } });
         // Left as found: 0 rows again.
         expect(await prisma.decklistFavorite.count()).toBe(0);
+      }
+    });
+  });
+
+  describe("private owned rows are hidden from public tabs", () => {
+    it("a private owned row is absent until published", async () => {
+      const user = await prisma.user.findUniqueOrThrow({
+        where: { email: "unmeel@gmail.com" },
+        select: { id: true },
+      });
+      const identity = await prisma.card.findFirstOrThrow({
+        where: { typeCode: { in: ["corp_identity", "runner_identity"] } },
+        select: { code: true },
+      });
+      const before = await searchDecklistsByTab({ tab: "recent", pageSize: 1 });
+      const row = await prisma.decklist.create({
+        data: {
+          name: "phase12-tab-private",
+          identityCode: identity.code,
+          ownerId: user.id,
+          isPublic: false,
+          raw: {},
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      try {
+        const afterInsert = await searchDecklistsByTab({
+          tab: "recent",
+          pageSize: 1,
+        });
+        expect(afterInsert.total).toBe(before.total);
+        const page = await searchDecklistsByTab({
+          tab: "recent",
+          pageSize: 50,
+        });
+        expect(page.items.some((d) => d.id === row.id)).toBe(false);
+
+        await prisma.decklist.update({
+          where: { id: row.id },
+          data: { isPublic: true },
+        });
+        const published = await searchDecklistsByTab({
+          tab: "recent",
+          pageSize: 5,
+        });
+        expect(published.total).toBe(before.total + 1);
+        expect(published.items.some((d) => d.id === row.id)).toBe(true);
+      } finally {
+        await prisma.decklist.delete({ where: { id: row.id } });
       }
     });
   });

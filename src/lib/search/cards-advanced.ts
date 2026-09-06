@@ -26,9 +26,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 import {
+  bannedCondition,
   buildFacetConditions,
   likePattern,
   orderColumn,
+  validBanned,
   type CardSummary,
 } from "./cards";
 import {
@@ -74,10 +76,6 @@ export interface ParsedAdvancedCardSearchParams extends AdvancedCardSearchParams
   pageSize: number;
 }
 
-function validBanned(value: string | undefined): "1" | "0" | undefined {
-  return value === "1" || value === "0" ? value : undefined;
-}
-
 // Parses a Next.js `searchParams` object into typed AdvancedCardSearchParams.
 // Kept separate from searchCardsAdvanced() so the parsing (multi-value facet
 // collection, normalization, validation) is testable without a DB
@@ -92,9 +90,8 @@ function validBanned(value: string | undefined): "1" | "0" | undefined {
 // competing ways to set Faction, one of them requiring you to already know
 // the code). The prefix syntax now lives in simple search only - the `q` box
 // on the home page, on /cards, and in the Simple search field at the top of
-// /cards/advanced - where it has type-ahead completion and no picker to
-// compete with. extractOperators() itself is unchanged and still used by
-// parseCardSearchParams(); only this parser stopped calling it.
+// /cards/advanced - where it is compiled from an AST. Only this parser
+// never called it.
 //
 // So the facet params below come from the pickers/dropdowns and nothing
 // else, and there is no precedence question left to arbitrate.
@@ -181,22 +178,11 @@ export async function searchCardsAdvanced(
   // Only applied with `format` (needs a format to pick activeRestrictionId).
   // banned=0 with a null activeRestrictionId is a no-op; banned=1 in that
   // case matches nothing, since nothing is banned.
-  const banned = validBanned(params.banned);
-  const formatId = params.format?.trim();
-  if (banned && formatId) {
-    const activeFormat = await prisma.format.findUnique({
-      where: { id: formatId },
-      select: { activeRestrictionId: true },
-    });
-    if (activeFormat?.activeRestrictionId) {
-      const contains = Prisma.sql`(raw->'attributes'->'restrictions'->'banned') @> to_jsonb(${activeFormat.activeRestrictionId}::text)`;
-      conditions.push(
-        banned === "1" ? contains : Prisma.sql`NOT (${contains})`,
-      );
-    } else if (banned === "1") {
-      conditions.push(Prisma.sql`false`);
-    }
-  }
+  const bannedSql = await bannedCondition(
+    params.format?.trim() || undefined,
+    validBanned(params.banned),
+  );
+  if (bannedSql) conditions.push(bannedSql);
 
   const whereSql = conditions.length
     ? Prisma.sql`WHERE ${Prisma.join(conditions, " AND ")}`

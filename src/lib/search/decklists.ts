@@ -17,6 +17,7 @@
 
 import { Prisma } from "@prisma/client";
 
+import { publicDecklistSql } from "@/lib/decklist-visibility";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -89,6 +90,7 @@ export async function searchDecklistsByTab(
         FROM "Decklist" d
         JOIN "Card" c ON c.code = d."identityCode"
         JOIN "DecklistFavorite" f ON f."decklistId" = d.id
+        WHERE ${publicDecklistSql()}
         GROUP BY d.id, c.title
         ORDER BY count(f.*) DESC, d."createdAt" DESC NULLS LAST, d.id ASC
         LIMIT ${pageSize} OFFSET ${offset}
@@ -97,6 +99,7 @@ export async function searchDecklistsByTab(
         SELECT count(DISTINCT d.id)::bigint AS count
         FROM "Decklist" d
         JOIN "DecklistFavorite" f ON f."decklistId" = d.id
+        WHERE ${publicDecklistSql()}
       `),
     ]);
     const total = Number(totalRows[0]?.count ?? BigInt(0));
@@ -105,8 +108,8 @@ export async function searchDecklistsByTab(
 
   const whereSql =
     tab === "week"
-      ? Prisma.sql`WHERE d."createdAt" >= now() - interval '7 days'`
-      : Prisma.empty;
+      ? Prisma.sql`WHERE ${publicDecklistSql()} AND d."createdAt" >= now() - interval '7 days'`
+      : Prisma.sql`WHERE ${publicDecklistSql()}`;
 
   // Recent and Posted-this-week both sort by createdAt; Recently-updated
   // sorts by updatedAt - a genuinely different signal (a deck actively being

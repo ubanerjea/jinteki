@@ -46,6 +46,7 @@ export async function toggleCardFavorite(cardCode: string) {
 
   revalidatePath(`/cards/${cardCode}`);
   revalidatePath("/favorites");
+  revalidatePath("/me");
 }
 
 export async function toggleDecklistFavorite(decklistId: string) {
@@ -61,9 +62,21 @@ export async function toggleDecklistFavorite(decklistId: string) {
       where: { userId_decklistId: { userId, decklistId } },
     });
   } else {
+    const decklist = await prisma.decklist.findUnique({
+      where: { id: decklistId },
+      select: { isPublic: true },
+    });
+    // Favorites are pointers at public lists; refuse a private target.
+    if (!decklist?.isPublic) {
+      revalidatePath(`/decklists/${decklistId}`);
+      revalidatePath("/favorites");
+      revalidatePath("/me");
+      return;
+    }
     await prisma.decklistFavorite.create({ data: { userId, decklistId } });
   }
 
   revalidatePath(`/decklists/${decklistId}`);
   revalidatePath("/favorites");
+  revalidatePath("/me");
 }

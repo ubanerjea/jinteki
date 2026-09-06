@@ -38,7 +38,7 @@ export async function SiteHeader() {
           </Link>
           {user && (
             <Link
-              href="/favorites"
+              href="/me"
               className="text-zinc-600 hover:underline dark:text-zinc-300"
             >
               Favorites
@@ -78,9 +78,12 @@ export async function SiteHeader() {
                   className="rounded-full"
                 />
               )}
-              <span className="text-zinc-600 dark:text-zinc-400">
+              <Link
+                href="/me"
+                className="text-zinc-600 hover:underline dark:text-zinc-400"
+              >
                 {user.name ?? user.email}
-              </span>
+              </Link>
               <form
                 action={async () => {
                   "use server";

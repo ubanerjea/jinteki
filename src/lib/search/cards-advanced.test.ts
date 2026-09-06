@@ -67,8 +67,7 @@ describe("parseAdvancedCardSearchParams", () => {
   // was removed deliberately: this page has explicit pickers for exactly
   // those four facets, so the prefix syntax here was a redundant second way
   // to set them that also demanded the exact underlying code. The syntax now
-  // lives in simple search only, where parseCardSearchParams() still calls
-  // extractOperators() unchanged.
+  // lives in simple search only.
   describe("title and text are literal, with no prefix parsing", () => {
     it("keeps a bare prefix token as the text to search for", () => {
       const result = parseAdvancedCardSearchParams({ title: "f:anarch" });

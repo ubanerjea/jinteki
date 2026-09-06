@@ -51,6 +51,17 @@ export function influencePips(used: number): string {
   return used > 0 ? "●".repeat(used) : "";
 }
 
+export function formatInfluenceLabel(
+  usedInfluence: number,
+  limit: number | null,
+): string {
+  const pips = influencePips(usedInfluence);
+  const prefix = `Influence: ${pips}${usedInfluence > 0 ? " " : ""}`;
+  return limit != null
+    ? `${prefix}${usedInfluence}/${limit}`
+    : `${prefix}${usedInfluence}`;
+}
+
 export interface DecklistSection<T> {
   key: string;
   heading: string;

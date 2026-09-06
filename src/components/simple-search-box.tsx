@@ -1,8 +1,9 @@
 "use client";
 
-// Type-ahead completion for the `f:`/`t:`/`s:`/`d:` prefix syntax, for the
-// **simple search box** - the single free-text `q` field on the home page,
-// on /cards, and at the top of /cards/advanced.
+// Type-ahead completion for simple-search prefixes, for the **simple
+// search box** - the single free-text `q` field on the home page, on
+// /cards, and at the top of /cards/advanced. `i:`/`title:`/`x:`/`text:`
+// are real operators but are not completed here.
 //
 // Why a separate component from facet-picker.tsx rather than a reuse of it:
 // the interaction is fundamentally different. The facet picker owns a
@@ -29,6 +30,8 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { matchCompletablePrefix } from "@/lib/search/query-syntax";
+
 import {
   HighlightedLabel,
   useHasMounted,
@@ -40,28 +43,19 @@ export interface PrefixOptionMap {
   type: FacetOption[];
   keyword: FacetOption[];
   side: FacetOption[];
+  format: FacetOption[];
+  pack: FacetOption[];
+  cycle: FacetOption[];
+  banned: FacetOption[];
 }
-
-// The same four letters extractOperators() recognizes in cards.ts, mapped to
-// the option list each completes from.
-const PREFIX_FIELD: Record<string, keyof PrefixOptionMap> = {
-  f: "faction",
-  t: "type",
-  s: "keyword",
-  d: "side",
-};
-
-// Deliberately looser than cards.ts's OPERATOR_TOKEN, which requires at
-// least one character after the colon: here the dropdown should appear the
-// instant the colon is typed, listing everything, so `\S*` not `\S+`.
-const PREFIX_TOKEN = /^(f|t|s|d):(\S*)$/i;
 
 const MAX_SUGGESTIONS = 8;
 
 export interface PrefixToken {
   field: keyof PrefixOptionMap;
-  // Offset of the first character *after* the prefix letter and colon, i.e.
-  // tokenStart + 2. Everything before it is left exactly as typed.
+  // Offset of the first character *after* the prefix and colon. Long forms
+  // (`faction:`) are longer than one letter, so this is
+  // start + prefix.length + 1, not start + 2.
   valueStart: number;
   // Offset of the end of the current whitespace-delimited token.
   end: number;
@@ -69,11 +63,19 @@ export interface PrefixToken {
   typed: string;
 }
 
+function tokenRange(value: string, caret: number): { start: number; end: number } {
+  let start = caret;
+  while (start > 0 && !/\s/.test(value[start - 1])) start -= 1;
+  let end = caret;
+  while (end < value.length && !/\s/.test(value[end])) end += 1;
+  return { start, end };
+}
+
 // Locates the whitespace-delimited token the caret sits in, and reports it
-// if it is a prefix token. Scans backward from the caret to the nearest
-// whitespace or start-of-string, and forward to the nearest whitespace or
-// end-of-string - so it finds the token the caret is *inside*, wherever that
-// is in a box that may hold several tokens and ordinary words.
+// if it is a completable prefix token. Optional `!` immediately before the
+// prefix still opens the menu. If the caret is on a bare word and the
+// previous token is a completable `prefix:` with a trailing space (`f: ana`),
+// complete that field.
 //
 // Pure, and exported, because this offset arithmetic and the splice below
 // are the whole substance of the interaction; everything around them is
@@ -82,19 +84,42 @@ export function findPrefixToken(
   value: string,
   caret: number,
 ): PrefixToken | null {
-  let start = caret;
-  while (start > 0 && !/\s/.test(value[start - 1])) start -= 1;
-  let end = caret;
-  while (end < value.length && !/\s/.test(value[end])) end += 1;
+  const { start, end } = tokenRange(value, caret);
+  const token = value.slice(start, end);
+  const bang = token.startsWith("!") ? 1 : 0;
+  const body = token.slice(bang);
+  const matched = matchCompletablePrefix(body);
+  if (matched) {
+    return {
+      field: matched.field,
+      valueStart: start + bang + matched.prefix.length + 1,
+      end,
+      typed: body.slice(matched.prefix.length + 1),
+    };
+  }
 
-  const match = value.slice(start, end).match(PREFIX_TOKEN);
-  if (!match) return null;
-  return {
-    field: PREFIX_FIELD[match[1].toLowerCase()],
-    valueStart: start + 2,
-    end,
-    typed: match[2],
-  };
+  // `f: ana` - caret on the bare word after a completable `prefix:` plus
+  // trailing space. `i:` / `x:` / `title:` are not completable, so they
+  // never take this path.
+  if (token && !token.includes(":")) {
+    let prevEnd = start;
+    while (prevEnd > 0 && /\s/.test(value[prevEnd - 1])) prevEnd -= 1;
+    if (prevEnd === 0 || prevEnd === start) return null;
+    let prevStart = prevEnd;
+    while (prevStart > 0 && !/\s/.test(value[prevStart - 1])) prevStart -= 1;
+    const prevToken = value.slice(prevStart, prevEnd);
+    const prevBody = prevToken.startsWith("!") ? prevToken.slice(1) : prevToken;
+    const prevMatch = matchCompletablePrefix(prevBody);
+    if (prevMatch && prevBody.toLowerCase() === `${prevMatch.prefix}:`) {
+      return {
+        field: prevMatch.field,
+        valueStart: start,
+        end,
+        typed: token,
+      };
+    }
+  }
+  return null;
 }
 
 // Replaces **only** value.slice(valueStart, end) - the part after the colon -

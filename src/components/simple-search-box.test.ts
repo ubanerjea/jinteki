@@ -35,6 +35,13 @@ const OPTIONS: PrefixOptionMap = {
     { value: "corp", label: "Corp" },
     { value: "runner", label: "Runner" },
   ],
+  format: [{ value: "standard", label: "Standard" }],
+  pack: [{ value: "kala_ghoda", label: "Kala Ghoda" }],
+  cycle: [{ value: "mumbad", label: "Mumbad" }],
+  banned: [
+    { value: "yes", label: "Yes" },
+    { value: "no", label: "No" },
+  ],
 };
 
 function render(props: Partial<Parameters<typeof SimpleSearchBox>[0]> = {}) {
@@ -147,6 +154,46 @@ describe("findPrefixToken", () => {
     // Caret parked on "virus", not on "f:anarch".
     expect(findPrefixToken("f:anarch virus", 14)).toBeNull();
   });
+
+  it("uses prefix.length + 1 for long-form faction: valueStart", () => {
+    expect(findPrefixToken("faction:ana", 11)).toEqual({
+      field: "faction",
+      valueStart: 8,
+      end: 11,
+      typed: "ana",
+    });
+  });
+
+  it("opens on format:, e:, cy:, and ban:", () => {
+    expect(findPrefixToken("format:", 7)?.field).toBe("format");
+    expect(findPrefixToken("e:", 2)?.field).toBe("pack");
+    expect(findPrefixToken("cy:", 3)?.field).toBe("cycle");
+    expect(findPrefixToken("ban:", 4)?.field).toBe("banned");
+  });
+
+  it("does not open on x:, i:, or title:", () => {
+    expect(findPrefixToken("x:foo", 5)).toBeNull();
+    expect(findPrefixToken("i:sure", 6)).toBeNull();
+    expect(findPrefixToken("title:foo", 9)).toBeNull();
+  });
+
+  it("opens after optional ! immediately before the prefix", () => {
+    expect(findPrefixToken("!f:", 3)).toEqual({
+      field: "faction",
+      valueStart: 3,
+      end: 3,
+      typed: "",
+    });
+  });
+
+  it("completes a trailing-space prefix: value (f: ana)", () => {
+    expect(findPrefixToken("f: ana", 6)).toEqual({
+      field: "faction",
+      valueStart: 3,
+      end: 6,
+      typed: "ana",
+    });
+  });
 });
 
 describe("spliceCompletion", () => {
@@ -169,7 +216,7 @@ describe("spliceCompletion", () => {
     // between them, ready for the next word, and the alternative - looking
     // ahead and conditionally omitting it - would make the caret position
     // depend on what follows. Trailing/doubled whitespace is irrelevant to
-    // the parser (extractOperators splits on /\s+/).
+    // the parser (consecutive residual words are one phrase).
     const value = "rootkit s:vir trash";
     const token = findPrefixToken(value, 13)!;
     expect(spliceCompletion(value, token, "virus")).toEqual({

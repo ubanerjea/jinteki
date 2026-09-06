@@ -83,6 +83,9 @@ export default async function DecklistsPage({
           <Link href="/decklists/advanced" className="underline">
             Search
           </Link>
+          <Link href="/decklists/new" className="underline">
+            New decklist
+          </Link>
           <Link href="/" className="underline">
             Home
           </Link>

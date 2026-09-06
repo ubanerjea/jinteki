@@ -46,11 +46,13 @@ describe("describeFacets", () => {
       format: "standard",
       keyword: "virus",
       faction: "anarch",
+      banned: "1",
     });
     expect(described.map((f) => f.label)).toEqual([
       "Faction",
       "Subtype",
       "Format",
+      "Banned",
     ]);
   });
 

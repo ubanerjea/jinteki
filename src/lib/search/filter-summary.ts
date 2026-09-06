@@ -35,6 +35,7 @@ export const FACET_PARAMS: { key: string; label: string }[] = [
   { key: "keyword", label: "Subtype" },
   { key: "pack", label: "Set" },
   { key: "format", label: "Format" },
+  { key: "banned", label: "Banned" },
 ];
 
 const FACET_KEYS = FACET_PARAMS.map((f) => f.key);

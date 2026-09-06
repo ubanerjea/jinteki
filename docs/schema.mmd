@@ -3,9 +3,22 @@ erDiagram
         string code PK
         string description
     }
+    Cycle {
+        string id PK
+        string name
+        datetime dateRelease "nullable"
+        int position "nullable"
+        json raw
+    }
     Pack {
         string code PK
         string name
+        datetime dateRelease "nullable"
+        int size "nullable"
+        string cardCycleId FK "nullable"
+        string cardSetTypeId "nullable"
+        int position "nullable"
+        json raw "nullable"
     }
     Card {
         string code PK
@@ -22,7 +35,13 @@ erDiagram
         string id PK
         string name
         string identityCode FK
+        datetime createdAt "nullable"
+        datetime updatedAt "nullable"
+        string nrdbUserId "nullable"
         json raw
+        string ownerId FK "nullable"
+        boolean isPublic
+        string notes "nullable"
     }
     DecklistCard {
         string decklistId PK,FK
@@ -93,6 +112,43 @@ erDiagram
         string decklistId PK,FK
         datetime createdAt
     }
+    Format {
+        string id PK
+        string name
+        string activeRestrictionId "nullable"
+        string activeCardPoolId "nullable"
+        string description "nullable"
+        json raw
+    }
+    Restriction {
+        string id PK
+        string name
+        string formatId FK
+        datetime dateStart "nullable"
+        json raw
+    }
+    CardPool {
+        string id PK
+        string name
+        string formatId FK
+        string_array cardCycleIds
+        int rotationOrdinal "nullable"
+        datetime rotationDateStart "nullable"
+        json raw
+    }
+    AllowedLogin {
+        string githubLogin PK
+        boolean active
+        datetime addedAt
+        datetime updatedAt
+        string note "nullable"
+    }
+    LoginAttempt {
+        string id PK
+        string githubLogin
+        boolean allowed
+        datetime attemptedAt
+    }
     SyncRun {
         string id PK
         synctype type
@@ -102,9 +158,11 @@ erDiagram
         int recordCount "nullable"
         string errorMessage "nullable"
     }
+    Cycle ||--o{ Pack : "cycle (optional)"
     Faction ||--o{ Card : "faction"
     Pack ||--o{ Card : "pack (optional)"
     Card ||--o{ Decklist : "identity"
+    User ||--o{ Decklist : "owner (optional)"
     Decklist ||--o{ DecklistCard : "decklist"
     Card ||--o{ DecklistCard : "card"
     Card ||--o{ Ruling : "card"
@@ -115,3 +173,5 @@ erDiagram
     Card ||--o{ CardFavorite : "card"
     User ||--o{ DecklistFavorite : "user"
     Decklist ||--o{ DecklistFavorite : "decklist"
+    Format ||--o{ Restriction : "format"
+    Format ||--o{ CardPool : "format"

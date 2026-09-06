@@ -19,7 +19,7 @@ export default async function Home() {
   // Formats section (format-descriptions-links-and-search-plan.md §4b):
   // Format is a tiny table (6 rows) - always fetched in full, same treatment
   // /cards/[code]/page.tsx already gives it.
-  // getPrefixOptions() feeds the search box's f:/t:/s:/d: type-ahead only -
+  // getPrefixOptions() feeds the search box's prefix type-ahead only -
   // the same lists /cards and /cards/advanced use. It changes nothing about
   // what the form submits or how /cards answers it.
   const [formats, prefixOptions] = await Promise.all([
