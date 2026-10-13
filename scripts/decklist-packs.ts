@@ -414,6 +414,7 @@ main().catch(async (err) => {
   await prisma.$disconnect();
   process.exit(1);
 });
+<<<<<<< HEAD
 
 //appendix: notes on current usage for FFG editions, NSG editions, and cards which appear in both FFG and NSG editions
 /* 
@@ -438,3 +439,5 @@ main().catch(async (err) => {
   available, and for NSG-origin cards you'd typically want the original release. But worth knowing if you ever see a card grouped under an unexpected pack.
   */
 
+=======
+>>>>>>> fbb60e790cec075fa6111ed41695920c3f8e3eb3
